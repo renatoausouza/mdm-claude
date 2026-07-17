@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Local scratch (issue tracker convention, if reverted to local markdown)
+.scratch/
+
+# Uploaded/processed documents (never commit real or synthetic PII payloads)
+data/
+uploads/
+*.sqlite3
