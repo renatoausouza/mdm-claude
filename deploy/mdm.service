@@ -1,0 +1,29 @@
+[Unit]
+Description=MDM Master Data Registration Automation
+After=network.target
+
+[Service]
+Type=simple
+User=mdm-svc
+Group=mdm-svc
+WorkingDirectory=__REPO_DIR__
+Environment=MDM_HOST=127.0.0.1
+Environment=MDM_PORT=__MDM_PORT__
+ExecStart=__REPO_DIR__/.venv/bin/python -m mdm.main
+Restart=on-failure
+RestartSec=2
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# Nothing is written to disk yet (document storage lands in a later ticket);
+# no ReadWritePaths needed until then.
+
+[Install]
+WantedBy=multi-user.target

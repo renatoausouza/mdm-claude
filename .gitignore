@@ -22,6 +22,9 @@ htmlcov/
 .vscode/
 .idea/
 
+# Claude Code harness internal state
+.claude/scheduled_tasks.lock
+
 # Local scratch (issue tracker convention, if reverted to local markdown)
 .scratch/
 
