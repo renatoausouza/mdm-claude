@@ -63,6 +63,22 @@ def test_all_parties_retained_including_non_supplier_roles() -> None:
     assert roles == {"supplier", "client", "transporter"}
 
 
+def test_a_cpf_tagged_supplier_does_not_populate_the_cnpj_field() -> None:
+    # Regression test: role_tagging accepts CPF too (needed for Client, #8),
+    # but Supplier's "cnpj" field and validator (is_valid_cnpj) are
+    # CNPJ-specific — a CPF tagged "supplier" (e.g. a sole proprietor) must
+    # not silently populate it with a value that isn't actually a CNPJ.
+    pdf_bytes = _make_pdf("Fornecedor CPF: 111.444.777-35")
+    fake = FakeClient({"legal_name": "Joao MEI", "email": None, "telephone": None, "address": None})
+
+    result = run_supplier_extraction(pdf_bytes, llm_client=fake)
+
+    assert result.cnpj is None
+    assert len(result.parties) == 1
+    assert result.parties[0].role == "supplier"  # still visible to the reviewer
+    assert result.parties[0].tax_id.value == "111.444.777-35"
+
+
 def test_no_role_labels_means_cnpj_is_none_and_party_is_unknown() -> None:
     pdf_bytes = _make_pdf("Random text 11.223.344/0001-86 more text")
     fake = FakeClient({"legal_name": None, "email": None, "telephone": None, "address": None})

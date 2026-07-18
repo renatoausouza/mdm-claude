@@ -59,7 +59,7 @@ def tag_roles(candidates: list[RegexCandidate], pages: list[PdfPage]) -> list[Ta
     pages_by_number = {page.page_number: page for page in pages}
     parties = []
     for candidate in candidates:
-        if candidate.kind != "cnpj":
+        if candidate.kind not in ("cnpj", "cpf"):
             continue
         page = pages_by_number[candidate.page_number]
 

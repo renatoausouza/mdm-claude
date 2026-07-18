@@ -10,25 +10,8 @@ from sqlalchemy.orm import Session
 
 from mdm.auth import get_current_user
 from mdm.db import DuplicateReviewCase, ExtractionJob, MasterRecord, User, get_session
-from mdm.review import (
-    _SUPPLIER_MASTER_FIELDS,
-    _claim_decision,
-    _load_decidable_job,
-    _normalized_field,
-    _record_decision,
-    _require_approver,
-    _supplier_fields_dict,
-)
-from mdm.review import detect_supplier_duplicate as detect_supplier_duplicate  # explicit re-export, see below
-from mdm.supplier_extraction import SupplierCandidateResult
-
-# detect_supplier_duplicate's implementation lives in review.py (approve_job
-# needs it too, and review.py must not import this module — that would be
-# circular) but is imported by name above so documents.py's existing
-# `from mdm.duplicates import detect_supplier_duplicate` keeps working
-# unchanged: this module is the ticket-#7-facing home for "duplicate
-# detection", even though review.py's own last-resort check shares the
-# same implementation.
+from mdm.domains import DOMAIN_SPECS, fields_dict, normalized_field
+from mdm.review import _claim_decision, _load_decidable_job, _record_decision, _require_approver
 
 router = APIRouter()
 
@@ -66,13 +49,14 @@ def get_duplicate_case(case_id: str, current_user: User = Depends(get_current_us
         job = session.query(ExtractionJob).filter_by(id=case.extraction_job_id).first()
         assert job is not None and job.result_json is not None
 
-        result = SupplierCandidateResult.model_validate_json(job.result_json)
+        spec = DOMAIN_SPECS[matched.domain]
+        result = spec.result_model.model_validate_json(job.result_json)
         old_fields = json.loads(matched.fields_json)
 
         comparisons = []
-        for name in _SUPPLIER_MASTER_FIELDS:
-            new_field = getattr(result, name)
-            new_value = _normalized_field(new_field) if new_field is not None else None
+        for name in spec.master_fields:
+            new_field = getattr(result, name, None)
+            new_value = normalized_field(new_field) if new_field is not None else None
             old_value = old_fields.get(name)
             comparisons.append(
                 FieldComparison(
@@ -133,16 +117,15 @@ def resolve_duplicate(
 
         matched = session.query(MasterRecord).filter_by(id=case.matched_master_record_id).first()
         assert matched is not None, "a DuplicateReviewCase always references a real MasterRecord"
+        spec = DOMAIN_SPECS[matched.domain]
 
-        # Resolving a duplicate always updates an existing Supplier record —
-        # inherently sensitive (FR-13) regardless of exactly which fields
-        # change, so segregation-of-duties applies to every accepting path
-        # here. Stricter than FR-13's literal "contact/address/email/phone"
-        # carve-out, but never looser, matching #6's same choice to treat
-        # "supplier" as always-segregated rather than parsing which fields
-        # changed. Rejecting isn't a fraud vector, same precedent as
-        # review.py's reject_job.
-        if payload.decision != "reject_all" and current_user.id == document.uploaded_by:
+        # Resolving a duplicate always updates an existing record — for any
+        # domain with segregation-of-duties enabled (only Supplier today,
+        # #8's Client is explicitly self-approvable), that applies to every
+        # accepting path here regardless of exactly which fields change,
+        # matching #6's same choice for creation. Rejecting isn't a fraud
+        # vector, same precedent as review.py's reject_job.
+        if payload.decision != "reject_all" and spec.requires_segregation and current_user.id == document.uploaded_by:
             raise HTTPException(
                 status_code=403,
                 detail="Segregation of duties: you cannot resolve a duplicate for your own submission",
@@ -150,22 +133,22 @@ def resolve_duplicate(
 
         if payload.decision != "reject_all" and not matched.is_current:
             # Another pending case against this same matched record was
-            # resolved first (e.g. two candidates for the same CNPJ
-            # uploaded before either was reviewed) — matched is now a
-            # superseded version. Applying this case against it would
-            # collide the version number with whatever superseded it and
-            # silently discard that update. Rejecting is still safe (it
-            # doesn't touch the record), so only accept_all/partial block.
+            # resolved first (e.g. two candidates for the same key uploaded
+            # before either was reviewed) — matched is now a superseded
+            # version. Applying this case against it would collide the
+            # version number with whatever superseded it and silently
+            # discard that update. Rejecting is still safe (it doesn't
+            # touch the record), so only accept_all/partial block.
             raise HTTPException(
                 status_code=409,
-                detail="The matched Supplier record has been superseded by another update since "
-                "this case was created — re-check for a duplicate against the current version "
-                "before resolving this case",
+                detail="The matched record has been superseded by another update since this case "
+                "was created — re-check for a duplicate against the current version before "
+                "resolving this case",
             )
 
         assert job.result_json is not None, "a decidable job always has a scored result"
-        result = SupplierCandidateResult.model_validate_json(job.result_json)
-        new_fields = _supplier_fields_dict(result)
+        result = spec.result_model.model_validate_json(job.result_json)
+        new_fields = fields_dict(result, spec.master_fields)
         old_fields = json.loads(matched.fields_json)
 
         old_status = job.status
@@ -196,7 +179,7 @@ def resolve_duplicate(
             resolved_status = "accepted"
         else:  # partial
             accepted = set(payload.accepted_fields or [])
-            unknown = accepted - set(_SUPPLIER_MASTER_FIELDS)
+            unknown = accepted - set(spec.master_fields)
             if unknown:
                 raise HTTPException(
                     status_code=422, detail=f"Unknown field(s) in accepted_fields: {sorted(unknown)}"
@@ -265,8 +248,8 @@ def resolve_duplicate(
             session.rollback()
             raise HTTPException(
                 status_code=409,
-                detail="The matched Supplier record was updated by another request just now — "
-                "re-check for a duplicate against the current version before resolving this case",
+                detail="The matched record was updated by another request just now — re-check "
+                "for a duplicate against the current version before resolving this case",
             ) from None
 
         return ResolveDuplicateResponse(case_id=case.id, status=case.status, master_record_id=new_record.id)

@@ -2,20 +2,24 @@ import re
 from dataclasses import dataclass
 
 from mdm.cnpj_validation import is_valid_cnpj
+from mdm.cpf_validation import is_valid_cpf
 from mdm.field_validation import EMAIL_PATTERN
 from mdm.pdf_extraction import PdfPage
 
-# Formatted only (no bare-14-digit fallback): an unformatted \d{14} pattern
-# matches any 14 consecutive digits (an order number, a barcode fragment),
-# and — combined with a nearby role label and no checksum check — that
-# false positive would get asserted to the LLM as the supplier's real tax
+# Formatted only (no bare-digit fallback): an unformatted \d{11} or \d{14}
+# pattern matches any consecutive digits (an order number, a barcode
+# fragment), and — combined with a nearby role label and no checksum check —
+# that false positive would get asserted to the LLM as the party's real tax
 # ID. The formatted punctuation shape is a much stronger signal on its own,
-# and is_valid_cnpj() below still checksum-validates it as a second layer.
+# and is_valid_cnpj()/is_valid_cpf() below still checksum-validate as a
+# second layer.
 _CNPJ_PATTERN = re.compile(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}")
+_CPF_PATTERN = re.compile(r"\d{3}\.\d{3}\.\d{3}-\d{2}")
 _PHONE_PATTERN = re.compile(r"\(\d{2}\)\s?\d{4,5}-\d{4}")
 
 _PATTERNS: dict[str, re.Pattern[str]] = {
     "cnpj": _CNPJ_PATTERN,
+    "cpf": _CPF_PATTERN,
     "email": EMAIL_PATTERN,
     "phone": _PHONE_PATTERN,
 }
@@ -50,6 +54,8 @@ def find_candidates(pages: list[PdfPage]) -> list[RegexCandidate]:
             for match in pattern.finditer(page.text):
                 value = match.group()
                 if kind == "cnpj" and not is_valid_cnpj(value):
+                    continue
+                if kind == "cpf" and not is_valid_cpf(value):
                     continue
                 occurrence_index = occurrence_counts.get((kind, value), 0)
                 occurrence_counts[(kind, value)] = occurrence_index + 1

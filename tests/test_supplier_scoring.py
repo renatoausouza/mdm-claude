@@ -1,4 +1,5 @@
-from mdm.supplier_extraction import FieldValue, Provenance, SupplierCandidateResult, score_supplier
+from mdm.extraction_schema import FieldValue, Provenance
+from mdm.supplier_extraction import SupplierCandidateResult, score_supplier
 
 
 def _field(value: str, confidence: float = 0.95) -> FieldValue:

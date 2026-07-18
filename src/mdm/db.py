@@ -86,6 +86,12 @@ class ExtractionJob(Base):
     # needs_info -> approved | rejected (a reviewer can decide once
     # clarified, without requiring a brand-new upload)
     status: Mapped[str] = mapped_column(String, default="queued")
+    # "supplier" | "client" | "product" (#8/#10) — nullable only for
+    # migration-safety on pre-#8 rows; every job created going forward sets
+    # it explicitly (documents.py defaults new uploads to "supplier" for
+    # backward compatibility). review.py/duplicates.py treat a null domain
+    # as "supplier" (domains.job_domain()) for exactly those legacy rows.
+    domain: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
     result_json: Mapped[str | None] = mapped_column(String, nullable=True)
     error_detail: Mapped[str | None] = mapped_column(String, nullable=True)

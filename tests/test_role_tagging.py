@@ -37,6 +37,19 @@ def test_tags_client_role_from_nearby_label() -> None:
     assert parties[0].role == "client"
 
 
+def test_tags_client_role_from_a_cpf_not_just_cnpj() -> None:
+    # A client can be an individual (CPF), not just a company (CNPJ) — #8.
+    pdf_bytes = _make_pdf("Cliente CPF: 111.444.777-35")
+    pages = extract_pdf_pages(pdf_bytes)
+    candidates = find_candidates(pages)
+
+    parties = tag_roles(candidates, pages)
+
+    cpf_parties = [p for p in parties if p.tax_id.kind == "cpf"]
+    assert len(cpf_parties) == 1
+    assert cpf_parties[0].role == "client"
+
+
 def test_tax_id_with_no_nearby_label_is_unknown() -> None:
     pdf_bytes = _make_pdf("Some random document text 11.223.344/0001-86 more text")
     pages = extract_pdf_pages(pdf_bytes)

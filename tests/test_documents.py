@@ -196,3 +196,29 @@ def test_upload_writes_a_submitted_audit_log_entry() -> None:
         entry = session.query(AuditLogEntry).filter_by(document_id=document_id, action="submitted").first()
         assert entry is not None
         assert entry.actor_user_id is not None
+
+
+def test_reuploading_identical_content_under_a_different_domain_is_rejected() -> None:
+    # content-hash idempotency (#2) is keyed purely by file bytes, with one
+    # Document -> one ExtractionJob (DB-enforced 1:1) — re-requesting a
+    # different domain (#8/#10) for the same bytes must not silently return
+    # the first upload's job under a domain the caller never asked for.
+    client = TestClient(app)
+    headers = _uploader_headers(client)
+    content = b"identical content, two different domain requests"
+
+    first = client.post(
+        "/documents",
+        files={"file": ("a.txt", content, "text/plain")},
+        data={"domain": "supplier"},
+        headers=headers,
+    )
+    assert first.status_code == 201
+
+    second = client.post(
+        "/documents",
+        files={"file": ("b.txt", content, "text/plain")},
+        data={"domain": "client"},
+        headers=headers,
+    )
+    assert second.status_code == 409

@@ -37,6 +37,27 @@ def test_finds_cnpj_email_and_phone_with_page_and_bbox_provenance() -> None:
     assert "98765-4321" in phone_candidates[0].value
 
 
+def test_finds_valid_cpf_with_page_and_bbox_provenance() -> None:
+    pdf_bytes = _make_pdf("Cliente: Joao Silva CPF 111.444.777-35")
+    pages = extract_pdf_pages(pdf_bytes)
+
+    candidates = find_candidates(pages)
+
+    cpf_candidates = [c for c in candidates if c.kind == "cpf"]
+    assert len(cpf_candidates) == 1
+    assert cpf_candidates[0].value == "111.444.777-35"
+    assert cpf_candidates[0].bbox is not None
+
+
+def test_checksum_invalid_cpf_shaped_number_is_rejected() -> None:
+    pdf_bytes = _make_pdf("Pedido No: 111.444.777-99")
+    pages = extract_pdf_pages(pdf_bytes)
+
+    candidates = find_candidates(pages)
+
+    assert [c for c in candidates if c.kind == "cpf"] == []
+
+
 def test_checksum_invalid_cnpj_shaped_number_is_rejected() -> None:
     # An order/reference number that happens to look CNPJ-formatted but
     # fails the check-digit algorithm must not be treated as a real CNPJ.

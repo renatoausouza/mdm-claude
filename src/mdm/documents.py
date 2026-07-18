@@ -5,16 +5,15 @@ import logging
 import os
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 
 from mdm import config, storage
 from mdm.auth import get_current_user
 from mdm.db import AuditLogEntry, Document, DuplicateReviewCase, ExtractionJob, User, get_session
-from mdm.duplicates import detect_supplier_duplicate
+from mdm.domains import DOMAIN_SPECS, job_domain
 from mdm.scoring import ScoringResult
-from mdm.supplier_extraction import SupplierCandidateResult, run_supplier_extraction, score_supplier
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +50,17 @@ def _to_response(document: Document, job: ExtractionJob, duplicate_review_case_i
 
 
 @router.post("/documents", response_model=JobResponse, status_code=201)
-def upload_document(file: UploadFile = File(...), current_user: User = Depends(get_current_user)) -> JobResponse:
+def upload_document(
+    file: UploadFile = File(...),
+    domain: str = Form("supplier"),
+    current_user: User = Depends(get_current_user),
+) -> JobResponse:
+    spec = DOMAIN_SPECS.get(domain)
+    if spec is None:
+        raise HTTPException(
+            status_code=400, detail=f"Unsupported domain: {domain!r} (must be one of {sorted(DOMAIN_SPECS)})"
+        )
+
     extension = os.path.splitext(file.filename or "")[1].lower()
     if extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"Unsupported file type: {extension or '(none)'}")
@@ -71,6 +80,21 @@ def upload_document(file: UploadFile = File(...), current_user: User = Depends(g
         if existing_document is not None:
             job = session.query(ExtractionJob).filter_by(document_id=existing_document.id).first()
             assert job is not None, "every Document row must have a matching ExtractionJob"
+            # Content-hash idempotency (#2) predates multi-domain uploads
+            # (#8/#10) and is keyed purely by file bytes — one Document has
+            # exactly one ExtractionJob (a hard 1:1, DB-enforced). Silently
+            # returning that job's Supplier result for a re-upload someone
+            # explicitly requested as domain="client" would hand back the
+            # wrong candidate with no indication anything was ignored; fail
+            # loud instead of guessing which domain the caller actually
+            # wants for this content.
+            existing_domain = job_domain(job)
+            if existing_domain != domain:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"This content was already uploaded under domain={existing_domain!r}; "
+                    f"re-uploading identical content under a different domain ({domain!r}) is not supported.",
+                )
             existing_duplicate_case = (
                 session.query(DuplicateReviewCase).filter_by(extraction_job_id=job.id, status="pending").first()
             )
@@ -132,6 +156,7 @@ def upload_document(file: UploadFile = File(...), current_user: User = Depends(g
         job = ExtractionJob(
             id=str(uuid.uuid4()),
             document_id=document_id,
+            domain=domain,
             status="queued",
             created_at=datetime.datetime.now(datetime.timezone.utc),
         )
@@ -164,7 +189,7 @@ def upload_document(file: UploadFile = File(...), current_user: User = Depends(g
         duplicate_case: DuplicateReviewCase | None = None
         if extension == ".pdf":
             try:
-                result = run_supplier_extraction(content)
+                result = spec.extract(content)
                 job.result_json = result.model_dump_json()
                 # Scored candidates always land in PendingReview regardless
                 # of reliability tier — nothing may be auto-approved (D14,
@@ -174,11 +199,14 @@ def upload_document(file: UploadFile = File(...), current_user: User = Depends(g
                 # Held alongside PendingReview, per the state machine in
                 # solution-brief.md §7 — never blocks scoring/review, only
                 # adds a case for #7's duplicate-resolution path to pick up.
-                duplicate_case = detect_supplier_duplicate(session, job, result)
-                if duplicate_case is not None:
-                    session.add(duplicate_case)
+                # Only Supplier (#7) has a detect_duplicate wired up today;
+                # #9/#11 add Client/Product dedup the same way.
+                if spec.detect_duplicate is not None:
+                    duplicate_case = spec.detect_duplicate(session, job, result)
+                    if duplicate_case is not None:
+                        session.add(duplicate_case)
             except Exception:  # document content is untrusted; must not crash the upload request
-                logger.exception("Supplier extraction failed for document %s", document_id)
+                logger.exception("Extraction failed for document %s (domain=%s)", document_id, domain)
                 job.status = "extraction_failed"
                 job.error_detail = "Extraction failed; see server logs for details"
         else:
@@ -205,8 +233,15 @@ def upload_document(file: UploadFile = File(...), current_user: User = Depends(g
 class JobResultResponse(BaseModel):
     id: str
     document_id: str
+    domain: str
     status: str
-    result: SupplierCandidateResult | None
+    # A generic dict rather than a Union of the per-domain Pydantic models:
+    # the concrete model is already selected server-side (via job.domain)
+    # to build this, so the JSON shape is exactly as precise either way —
+    # this just avoids ambiguous union-type serialization across three
+    # structurally-overlapping candidate schemas. Same wire shape as before
+    # for existing Supplier consumers (nested field objects, unchanged).
+    result: dict[str, object] | None
     error_detail: str | None
     scoring: ScoringResult | None
     duplicate_review_case_id: str | None = None
@@ -218,16 +253,19 @@ def get_job_result(job_id: str, current_user: User = Depends(get_current_user)) 
         job = session.query(ExtractionJob).filter_by(id=job_id).first()
         if job is None:
             raise HTTPException(status_code=404, detail="Job not found")
-        result = SupplierCandidateResult.model_validate_json(job.result_json) if job.result_json else None
+        domain = job_domain(job)
+        spec = DOMAIN_SPECS[domain]
+        result = spec.result_model.model_validate_json(job.result_json) if job.result_json else None
         duplicate_case = (
             session.query(DuplicateReviewCase).filter_by(extraction_job_id=job.id, status="pending").first()
         )
         return JobResultResponse(
             id=job.id,
             document_id=job.document_id,
+            domain=domain,
             status=job.status,
-            result=result,
+            result=result.model_dump(mode="json") if result is not None else None,
             error_detail=job.error_detail,
-            scoring=score_supplier(result) if result is not None else None,
+            scoring=spec.score(result) if result is not None else None,
             duplicate_review_case_id=duplicate_case.id if duplicate_case is not None else None,
         )
