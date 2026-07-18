@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 
 from mdm import config, storage
-from mdm.db import Document, ExtractionJob, get_session
+from mdm.db import AuditLogEntry, Document, ExtractionJob, get_session
 from mdm.supplier_extraction import SupplierCandidateResult, run_supplier_extraction
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,13 @@ class JobResponse(BaseModel):
     content_hash: str
     status: str
     retention_until: datetime.datetime | None
+
+
+def _compute_retention_until() -> datetime.datetime | None:
+    retention_days = config.get_retention_days()
+    if retention_days is None:
+        return None
+    return datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=retention_days)
 
 
 def _to_response(document: Document, job: ExtractionJob) -> JobResponse:
@@ -59,18 +66,30 @@ def upload_document(file: UploadFile = File(...)) -> JobResponse:
             job = session.query(ExtractionJob).filter_by(document_id=existing_document.id).first()
             assert job is not None, "every Document row must have a matching ExtractionJob"
             if not storage.document_exists(existing_document.id):
+                if existing_document.purged_at is not None:
+                    # The file was intentionally removed by the retention
+                    # purge job (#13), not lost to corruption — re-upload of
+                    # identical content restores it rather than raising the
+                    # same alarm as unexpected data loss.
+                    storage.save_document(existing_document.id, content)
+                    existing_document.purged_at = None
+                    existing_document.retention_until = _compute_retention_until()
+                    session.add(
+                        AuditLogEntry(
+                            id=str(uuid.uuid4()),
+                            document_id=existing_document.id,
+                            action="restored",
+                            occurred_at=datetime.datetime.now(datetime.timezone.utc),
+                            detail="Re-uploaded after retention purge; file restored to storage",
+                        )
+                    )
+                    session.commit()
+                    return _to_response(existing_document, job)
                 raise HTTPException(
                     status_code=500,
                     detail="Document record exists but its stored file is missing",
                 )
             return _to_response(existing_document, job)
-
-        retention_days = config.get_retention_days()
-        retention_until = (
-            datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=retention_days)
-            if retention_days is not None
-            else None
-        )
 
         document_id = str(uuid.uuid4())
         document = Document(
@@ -78,7 +97,7 @@ def upload_document(file: UploadFile = File(...)) -> JobResponse:
             content_hash=content_hash,
             content_type=file.content_type or "application/octet-stream",
             uploaded_at=datetime.datetime.now(datetime.timezone.utc),
-            retention_until=retention_until,
+            retention_until=_compute_retention_until(),
         )
         job = ExtractionJob(
             id=str(uuid.uuid4()),

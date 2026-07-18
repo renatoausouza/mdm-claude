@@ -13,6 +13,10 @@ SERVICE_USER="mdm-svc"
 systemctl stop mdm.service 2>/dev/null || true
 systemctl disable mdm.service 2>/dev/null || true
 rm -f /etc/systemd/system/mdm.service
+
+systemctl stop mdm-purge.timer 2>/dev/null || true
+systemctl disable mdm-purge.timer 2>/dev/null || true
+rm -f /etc/systemd/system/mdm-purge.timer /etc/systemd/system/mdm-purge.service
 systemctl daemon-reload
 
 rm -f /etc/nginx/sites-enabled/mdm.conf

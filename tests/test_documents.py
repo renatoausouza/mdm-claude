@@ -1,8 +1,10 @@
+import datetime
 import os
 
 from fastapi.testclient import TestClient
 
 from mdm import storage
+from mdm.db import AuditLogEntry, Document, get_session
 from mdm.main import app
 
 # These tests exercise the generic upload/storage/idempotency behavior from
@@ -69,3 +71,46 @@ def test_reupload_fails_loudly_if_stored_file_is_missing(tmp_path) -> None:
 
     second = client.post("/documents", files={"file": ("b.txt", content, "text/plain")})
     assert second.status_code == 500
+
+
+def test_reupload_after_purge_restores_the_file_instead_of_500ing() -> None:
+    client = TestClient(app)
+    content = b"content that will be purged and restored"
+
+    first = client.post("/documents", files={"file": ("a.txt", content, "text/plain")})
+    document_id = first.json()["document_id"]
+
+    # Simulate the retention-purge job having already run for this document.
+    with get_session() as session:
+        document = session.get(Document, document_id)
+        assert document is not None
+        document.purged_at = datetime.datetime.now(datetime.timezone.utc)
+        session.commit()
+    storage.delete_document(document_id)
+
+    second = client.post("/documents", files={"file": ("b.txt", content, "text/plain")})
+
+    assert second.status_code == 201
+    assert second.json()["document_id"] == document_id
+    assert storage.document_exists(document_id)
+
+
+def test_reupload_after_purge_writes_a_restored_audit_log_entry() -> None:
+    client = TestClient(app)
+    content = b"content that will be purged and restored, audited too"
+
+    first = client.post("/documents", files={"file": ("a.txt", content, "text/plain")})
+    document_id = first.json()["document_id"]
+
+    with get_session() as session:
+        document = session.get(Document, document_id)
+        assert document is not None
+        document.purged_at = datetime.datetime.now(datetime.timezone.utc)
+        session.commit()
+    storage.delete_document(document_id)
+
+    client.post("/documents", files={"file": ("b.txt", content, "text/plain")})
+
+    with get_session() as session:
+        entry = session.query(AuditLogEntry).filter_by(document_id=document_id, action="restored").first()
+        assert entry is not None

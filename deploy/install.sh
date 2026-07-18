@@ -49,9 +49,16 @@ python3 -m venv "$REPO_DIR/.venv"
 sed -e "s#__REPO_DIR__#${REPO_DIR}#g" -e "s#__MDM_PORT__#${MDM_PORT}#g" \
   "$REPO_DIR/deploy/mdm.service" > /etc/systemd/system/mdm.service
 chmod 644 /etc/systemd/system/mdm.service
+sed -e "s#__REPO_DIR__#${REPO_DIR}#g" \
+  "$REPO_DIR/deploy/mdm-purge.service" > /etc/systemd/system/mdm-purge.service
+chmod 644 /etc/systemd/system/mdm-purge.service
+cp "$REPO_DIR/deploy/mdm-purge.timer" /etc/systemd/system/mdm-purge.timer
+chmod 644 /etc/systemd/system/mdm-purge.timer
+
 systemctl daemon-reload
 systemctl enable mdm.service
 systemctl restart mdm.service
+systemctl enable --now mdm-purge.timer
 
 mkdir -p /etc/nginx/ssl
 if [ ! -f /etc/nginx/ssl/mdm-selfsigned.crt ]; then
@@ -72,4 +79,4 @@ ln -sf /etc/nginx/sites-available/mdm.conf /etc/nginx/sites-enabled/mdm.conf
 nginx -t
 systemctl reload nginx || systemctl restart nginx
 
-echo "Done. Verify with: systemctl status mdm.service nginx"
+echo "Done. Verify with: systemctl status mdm.service mdm-purge.timer nginx"

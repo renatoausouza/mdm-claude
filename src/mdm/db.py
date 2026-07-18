@@ -2,8 +2,10 @@ import datetime
 import os
 from functools import lru_cache
 
-from sqlalchemy import Boolean, DateTime, Engine, ForeignKey, Integer, String, create_engine
+from sqlalchemy import Boolean, DateTime, Engine, ForeignKey, Integer, String, create_engine, inspect, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
+from sqlalchemy.schema import CreateColumn
 
 from mdm import config
 
@@ -63,6 +65,11 @@ class Document(Base):
     content_type: Mapped[str] = mapped_column(String)
     uploaded_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
     retention_until: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Set once the retention-purge job (#13) has deleted the stored file.
+    # The row itself (and its ExtractionJob/result) is kept — only the raw
+    # source file is removed. Null means "still on disk (or never subject
+    # to a retention window)".
+    purged_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ExtractionJob(Base):
@@ -78,13 +85,75 @@ class ExtractionJob(Base):
     error_detail: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
+class AuditLogEntry(Base):
+    """Append-only record of actions taken on a document outside the normal
+    request path — currently just retention purges (#13), but the shape is
+    generic (action + detail) so future audited actions don't need a new
+    table."""
+
+    __tablename__ = "audit_log_entries"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    document_id: Mapped[str] = mapped_column(String, ForeignKey("documents.id"), index=True)
+    action: Mapped[str] = mapped_column(String)
+    occurred_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    detail: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+def _add_missing_columns(engine: Engine) -> None:
+    """create_all() only creates tables that don't exist yet — it never adds
+    a column to a table that's already there. This project has no migration
+    tool, so a nullable column added to an existing model (as #13 did for
+    Document.purged_at) would otherwise break every deployment against a
+    pre-existing database. Handles nullable-column additions only; a
+    renamed/dropped column or a new NOT NULL column needs a real migration.
+    """
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    for table in Base.metadata.sorted_tables:
+        if table.name not in existing_tables:
+            continue  # a brand-new table — create_all() already handled it
+        existing_columns = {col["name"] for col in inspector.get_columns(table.name)}
+        for column in table.columns:
+            if column.name in existing_columns:
+                continue
+            if not column.nullable:
+                raise RuntimeError(
+                    f"{table.name}.{column.name} is a new NOT NULL column on an "
+                    "existing table — needs a real migration, not this helper."
+                )
+            column_ddl = CreateColumn(column).compile(engine)
+            # Own transaction per column (not one shared across the whole
+            # function): the app server and the hourly purge job are
+            # separate processes that both call get_engine() on startup, so
+            # two of them can see the same column missing and both attempt
+            # to add it. Swallowing the loser's "duplicate column" error
+            # here — after its own transaction has cleanly rolled back —
+            # makes that race harmless instead of crashing the losing
+            # process.
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {column_ddl}"))
+            except OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise
+
+
 @lru_cache
 def get_engine(database_url: str) -> Engine:
+    connect_args = {}
     if database_url.startswith("sqlite:///"):
         db_path = database_url.removeprefix("sqlite:///")
         os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
-    engine = create_engine(database_url)
+        # The retention-purge job (#13) is a second process now writing to
+        # the same SQLite file as the app server. SQLite's default ~5s
+        # busy timeout can turn an ordinary lock wait into an unhandled
+        # "database is locked" error; 30s gives concurrent writers room to
+        # queue instead of failing.
+        connect_args = {"timeout": 30}
+    engine = create_engine(database_url, connect_args=connect_args)
     Base.metadata.create_all(engine)
+    _add_missing_columns(engine)
     return engine
 
 

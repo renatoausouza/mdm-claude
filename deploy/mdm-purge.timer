@@ -1,0 +1,14 @@
+[Unit]
+Description=Run the MDM retention purge job hourly
+
+[Timer]
+# Retention windows are configured in days (MDM_RETENTION_DAYS), so hourly
+# is frequent enough that a document is never held past its window for more
+# than an hour — no need for anything finer-grained.
+OnCalendar=hourly
+# Catch up on a run missed while the host was powered off, instead of
+# silently waiting until the next hourly tick.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -86,3 +86,12 @@ def read_document(document_id: str) -> bytes:
 
 def document_exists(document_id: str) -> bool:
     return os.path.exists(_document_path(document_id))
+
+
+def delete_document(document_id: str) -> None:
+    # Idempotent: called by the retention-purge job, which should be safe to
+    # re-run against a document it already purged.
+    try:
+        os.remove(_document_path(document_id))
+    except FileNotFoundError:
+        pass
