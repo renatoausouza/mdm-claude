@@ -2,6 +2,7 @@ import re
 from dataclasses import dataclass
 
 from mdm.cnpj_validation import is_valid_cnpj
+from mdm.field_validation import EMAIL_PATTERN
 from mdm.pdf_extraction import PdfPage
 
 # Formatted only (no bare-14-digit fallback): an unformatted \d{14} pattern
@@ -11,12 +12,11 @@ from mdm.pdf_extraction import PdfPage
 # ID. The formatted punctuation shape is a much stronger signal on its own,
 # and is_valid_cnpj() below still checksum-validates it as a second layer.
 _CNPJ_PATTERN = re.compile(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}")
-_EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+")
 _PHONE_PATTERN = re.compile(r"\(\d{2}\)\s?\d{4,5}-\d{4}")
 
 _PATTERNS: dict[str, re.Pattern[str]] = {
     "cnpj": _CNPJ_PATTERN,
-    "email": _EMAIL_PATTERN,
+    "email": EMAIL_PATTERN,
     "phone": _PHONE_PATTERN,
 }
 

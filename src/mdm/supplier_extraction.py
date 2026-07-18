@@ -2,10 +2,14 @@ import re
 
 from pydantic import BaseModel, ConfigDict
 
+from mdm import config
+from mdm.cnpj_validation import is_valid_cnpj
+from mdm.field_validation import is_valid_email, is_valid_telephone
 from mdm.llm_extraction import OllamaExtractionClient, extract_supplier_fields
 from mdm.pdf_extraction import extract_pdf_pages
 from mdm.regex_candidates import find_candidates
 from mdm.role_tagging import TaggedParty, tag_roles
+from mdm.scoring import DomainSpec, ScoringResult, score_candidate
 
 REGEX_CONFIDENCE = 0.95
 
@@ -93,3 +97,29 @@ def run_supplier_extraction(
         address=to_field("address"),
         parties=party_infos,
     )
+
+
+# Required-for-registration per the solution brief's D15: Supplier = legal
+# name + CNPJ. Email/telephone/address are optional but still structurally
+# validated when present (D15's hard floor only concerns required fields;
+# compliance still checks format on whatever IS populated).
+SUPPLIER_DOMAIN_SPEC = DomainSpec(
+    required_fields=frozenset({"cnpj", "legal_name"}),
+    optional_fields=frozenset({"email", "telephone", "address"}),
+    validators={
+        "cnpj": is_valid_cnpj,
+        "email": is_valid_email,
+        "telephone": is_valid_telephone,
+    },
+)
+
+
+def score_supplier(result: SupplierCandidateResult) -> ScoringResult:
+    fields = {
+        "cnpj": result.cnpj,
+        "legal_name": result.legal_name,
+        "email": result.email,
+        "telephone": result.telephone,
+        "address": result.address,
+    }
+    return score_candidate(fields, SUPPLIER_DOMAIN_SPEC, config.get_confidence_threshold())

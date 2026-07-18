@@ -75,3 +75,18 @@ def get_session_duration_hours() -> int:
 
 def get_mfa_enrollment_session_duration_minutes() -> int:
     return _positive_int("MDM_MFA_ENROLLMENT_SESSION_DURATION_MINUTES", "10")
+
+
+def get_confidence_threshold() -> float:
+    # Below this, a field forces human review regardless of the overall
+    # reliability tier (D16). Default sits strictly between ticket #4's two
+    # LLM confidence tiers (0.3 "not found in source", 0.9 "found") so it
+    # correctly routes only the unverified tier to review.
+    value = os.environ.get("MDM_CONFIDENCE_THRESHOLD", "0.7")
+    try:
+        threshold = float(value)
+    except ValueError:
+        raise ValueError(f"MDM_CONFIDENCE_THRESHOLD must be a number, got {value!r}") from None
+    if not 0.0 <= threshold <= 1.0:
+        raise ValueError(f"MDM_CONFIDENCE_THRESHOLD must be between 0 and 1, got {threshold}")
+    return threshold
