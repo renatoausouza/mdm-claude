@@ -23,11 +23,24 @@ rm -f /etc/nginx/sites-enabled/mdm.conf
 rm -f /etc/nginx/sites-available/mdm.conf
 systemctl reload nginx 2>/dev/null || true
 
-setfacl -x "u:${SERVICE_USER}" "$(dirname "$REPO_DIR")" 2>/dev/null || true
+# Mirrors install.sh's grant_traverse_acl: it walks every ancestor of
+# REPO_DIR up to "/" (not just the immediate parent), so removal has to
+# walk the same chain or it leaves a stray traverse grant behind (e.g. on
+# the owning user's home directory, two levels up from a repo cloned to
+# ~/projects/<name>).
+revoke_traverse_acl() {
+  local user="$1" dir="$2"
+  while [ "$dir" != "/" ] && [ -n "$dir" ]; do
+    setfacl -x "u:${user}" "$dir" 2>/dev/null || true
+    dir="$(dirname "$dir")"
+  done
+}
+
+revoke_traverse_acl "$SERVICE_USER" "$(dirname "$REPO_DIR")"
 setfacl -R -x "u:${SERVICE_USER}" "$REPO_DIR" 2>/dev/null || true
 setfacl -R -d -x "u:${SERVICE_USER}" "$REPO_DIR" 2>/dev/null || true
 
-setfacl -x "u:www-data" "$(dirname "$REPO_DIR")" 2>/dev/null || true
+revoke_traverse_acl "www-data" "$(dirname "$REPO_DIR")"
 setfacl -x "u:www-data" "$REPO_DIR" 2>/dev/null || true
 setfacl -x "u:www-data" "$REPO_DIR/frontend" 2>/dev/null || true
 setfacl -R -x "u:www-data" "$REPO_DIR/frontend/dist" 2>/dev/null || true

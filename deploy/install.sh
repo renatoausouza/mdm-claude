@@ -21,11 +21,26 @@ if ! id "$SERVICE_USER" >/dev/null 2>&1; then
   useradd --system --no-create-home --shell /usr/sbin/nologin "$SERVICE_USER"
 fi
 
+# Grant traverse (x) ACL on every ancestor directory up to (but not
+# including) "/" — not just the immediate parent. A restrictive permission
+# on ANY ancestor blocks traversal regardless of what's granted below it,
+# and REPO_DIR's immediate parent isn't the only one that can be
+# restrictive: a user's home directory (commonly mode 750, as ubuntu's is
+# here) sits two levels up from a repo cloned to ~/projects/<name>, and
+# granting only dirname($REPO_DIR) silently leaves that level unfixed.
+grant_traverse_acl() {
+  local user="$1" dir="$2"
+  while [ "$dir" != "/" ] && [ -n "$dir" ]; do
+    setfacl -m "u:${user}:x" "$dir"
+    dir="$(dirname "$dir")"
+  done
+}
+
 # Grant the service user read/traverse access to the repo without adding it
 # to the owning user's group (surgical ACL, not a broad group grant) and
 # without a recursive chgrp/chmod, which would overwrite existing ownership.
 # The default ACL (-d) covers files added later (e.g. by `git pull`).
-setfacl -m "u:${SERVICE_USER}:x" "$(dirname "$REPO_DIR")"
+grant_traverse_acl "$SERVICE_USER" "$(dirname "$REPO_DIR")"
 setfacl -R -m "u:${SERVICE_USER}:rX" "$REPO_DIR"
 setfacl -R -d -m "u:${SERVICE_USER}:rX" "$REPO_DIR"
 
@@ -56,7 +71,7 @@ command -v npm >/dev/null || {
 # approach as the mdm-svc grants above, scoped to just the build output
 # rather than the whole repo (frontend/dist has no secrets, but there's no
 # reason to widen access further than necessary).
-setfacl -m "u:www-data:x" "$(dirname "$REPO_DIR")"
+grant_traverse_acl "www-data" "$(dirname "$REPO_DIR")"
 setfacl -m "u:www-data:x" "$REPO_DIR"
 setfacl -m "u:www-data:x" "$REPO_DIR/frontend"
 setfacl -R -m "u:www-data:rX" "$REPO_DIR/frontend/dist"
