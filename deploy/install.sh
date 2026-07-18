@@ -29,6 +29,15 @@ setfacl -m "u:${SERVICE_USER}:x" "$(dirname "$REPO_DIR")"
 setfacl -R -m "u:${SERVICE_USER}:rX" "$REPO_DIR"
 setfacl -R -d -m "u:${SERVICE_USER}:rX" "$REPO_DIR"
 
+# data/ (documents, the SQLite DB, the encryption key) needs write access,
+# unlike the rest of the repo — granted narrowly, not via the read-only
+# grant above. The systemd unit's ReadWritePaths= lifts the ProtectSystem=
+# strict mount restriction for this same path; this ACL is what actually
+# grants the POSIX permission underneath it.
+mkdir -p "$REPO_DIR/data/documents"
+setfacl -R -m "u:${SERVICE_USER}:rwX" "$REPO_DIR/data"
+setfacl -R -d -m "u:${SERVICE_USER}:rwX" "$REPO_DIR/data"
+
 python3 -m venv "$REPO_DIR/.venv"
 "$REPO_DIR/.venv/bin/pip" install --upgrade pip -q
 "$REPO_DIR/.venv/bin/pip" install -e "$REPO_DIR" -q

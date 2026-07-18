@@ -22,8 +22,9 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
-# Nothing is written to disk yet (document storage lands in a later ticket);
-# no ReadWritePaths needed until then.
+# Document storage, the SQLite DB, and the encryption key all live under
+# data/ (relative to WorkingDirectory) — the only writable path needed.
+ReadWritePaths=__REPO_DIR__/data
 
 [Install]
 WantedBy=multi-user.target

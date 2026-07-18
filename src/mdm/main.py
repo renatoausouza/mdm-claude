@@ -5,9 +5,11 @@ import uvicorn
 from fastapi import Depends, FastAPI, Response
 
 from mdm import config
+from mdm.documents import router as documents_router
 from mdm.ollama_client import OllamaClient
 
 app = FastAPI(title="mdm")
+app.include_router(documents_router)
 
 
 @app.get("/health")
