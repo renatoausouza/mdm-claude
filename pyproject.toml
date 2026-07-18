@@ -9,6 +9,8 @@ dependencies = [
     "sqlalchemy",
     "cryptography",
     "python-multipart",
+    "argon2-cffi",
+    "pyotp",
 ]
 
 [project.optional-dependencies]

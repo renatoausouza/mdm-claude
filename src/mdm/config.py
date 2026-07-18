@@ -1,6 +1,17 @@
 import os
 
 
+def _positive_int(env_var: str, default: str) -> int:
+    value = os.environ.get(env_var, default)
+    try:
+        parsed = int(value)
+    except ValueError:
+        raise ValueError(f"{env_var} must be an integer, got {value!r}") from None
+    if parsed < 0:
+        raise ValueError(f"{env_var} must not be negative, got {parsed}")
+    return parsed
+
+
 def get_port() -> int:
     return int(os.environ.get("MDM_PORT", "8000"))
 
@@ -22,16 +33,9 @@ def get_data_dir() -> str:
 
 
 def get_retention_days() -> int | None:
-    value = os.environ.get("MDM_RETENTION_DAYS")
-    if value is None:
+    if os.environ.get("MDM_RETENTION_DAYS") is None:
         return None
-    try:
-        days = int(value)
-    except ValueError:
-        raise ValueError(f"MDM_RETENTION_DAYS must be an integer, got {value!r}") from None
-    if days < 0:
-        raise ValueError(f"MDM_RETENTION_DAYS must not be negative, got {days}")
-    return days
+    return _positive_int("MDM_RETENTION_DAYS", "0")
 
 
 def get_database_url() -> str:
@@ -47,4 +51,20 @@ def get_encryption_key() -> str | None:
 
 
 def get_max_upload_bytes() -> int:
-    return int(os.environ.get("MDM_MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))  # 100 MiB default
+    return _positive_int("MDM_MAX_UPLOAD_BYTES", str(100 * 1024 * 1024))  # 100 MiB default
+
+
+def get_max_failed_login_attempts() -> int:
+    return _positive_int("MDM_MAX_FAILED_LOGIN_ATTEMPTS", "5")
+
+
+def get_lockout_duration_minutes() -> int:
+    return _positive_int("MDM_LOCKOUT_DURATION_MINUTES", "15")
+
+
+def get_session_duration_hours() -> int:
+    return _positive_int("MDM_SESSION_DURATION_HOURS", "24")
+
+
+def get_mfa_enrollment_session_duration_minutes() -> int:
+    return _positive_int("MDM_MFA_ENROLLMENT_SESSION_DURATION_MINUTES", "10")

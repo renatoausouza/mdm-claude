@@ -43,6 +43,17 @@ def _get_or_create_key() -> bytes:
     return _load_or_create_key(config.get_encryption_key_path(), config.get_encryption_key())
 
 
+def encrypt_text(value: str) -> str:
+    """Encrypt an arbitrary string at rest using the same key/mechanism as
+    document storage (e.g. for other secrets, like a TOTP seed, that need
+    the same confidentiality guarantee as stored documents)."""
+    return Fernet(_get_or_create_key()).encrypt(value.encode()).decode()
+
+
+def decrypt_text(value: str) -> str:
+    return Fernet(_get_or_create_key()).decrypt(value.encode()).decode()
+
+
 def _documents_dir() -> str:
     path = os.path.join(config.get_data_dir(), "documents")
     os.makedirs(path, exist_ok=True)
