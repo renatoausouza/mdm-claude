@@ -1,5 +1,6 @@
 import datetime
 import hashlib
+import logging
 import os
 import uuid
 
@@ -9,6 +10,9 @@ from sqlalchemy.exc import IntegrityError
 
 from mdm import config, storage
 from mdm.db import Document, ExtractionJob, get_session
+from mdm.supplier_extraction import SupplierCandidateResult, run_supplier_extraction
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -102,4 +106,50 @@ def upload_document(file: UploadFile = File(...)) -> JobResponse:
         # commit above had failed instead.
         storage.save_document(document_id, content)
 
+        # Synchronous for now — no task queue exists yet (an explicitly
+        # deferred architecture decision); PDF only, per this ticket's scope.
+        # Concurrent uploads share FastAPI's default worker threadpool, so a
+        # burst of slow extractions can starve other sync routes (including
+        # GET /jobs/{id}/result polling) — a known, accepted limitation of
+        # the synchronous-for-now design, not something this ticket fixes.
+        if extension == ".pdf":
+            try:
+                result = run_supplier_extraction(content)
+                job.result_json = result.model_dump_json()
+                job.status = "extracted"
+            except Exception:  # document content is untrusted; must not crash the upload request
+                logger.exception("Supplier extraction failed for document %s", document_id)
+                job.status = "extraction_failed"
+                job.error_detail = "Extraction failed; see server logs for details"
+        else:
+            # No pipeline exists yet for this format — say so explicitly
+            # rather than leaving the job at "queued" forever with no
+            # signal to the caller that it will never advance.
+            job.status = "unsupported_format"
+        session.commit()
+
         return _to_response(document, job)
+
+
+class JobResultResponse(BaseModel):
+    id: str
+    document_id: str
+    status: str
+    result: SupplierCandidateResult | None
+    error_detail: str | None
+
+
+@router.get("/jobs/{job_id}/result", response_model=JobResultResponse)
+def get_job_result(job_id: str) -> JobResultResponse:
+    with get_session() as session:
+        job = session.query(ExtractionJob).filter_by(id=job_id).first()
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found")
+        result = SupplierCandidateResult.model_validate_json(job.result_json) if job.result_json else None
+        return JobResultResponse(
+            id=job.id,
+            document_id=job.document_id,
+            status=job.status,
+            result=result,
+            error_detail=job.error_detail,
+        )

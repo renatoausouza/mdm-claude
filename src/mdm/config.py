@@ -28,6 +28,13 @@ def get_ollama_ready_model() -> str:
     return os.environ.get("OLLAMA_READY_MODEL", "tinyllama")
 
 
+def get_ollama_extraction_model() -> str:
+    # Distinct from the readiness-check model: extraction needs a model
+    # actually capable of structured JSON output, not just a cheap liveness
+    # ping — tinyllama is too weak for this.
+    return os.environ.get("OLLAMA_EXTRACTION_MODEL", "llama3")
+
+
 def get_data_dir() -> str:
     return os.environ.get("MDM_DATA_DIR", "data")
 

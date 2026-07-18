@@ -70,8 +70,12 @@ class ExtractionJob(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     document_id: Mapped[str] = mapped_column(String, ForeignKey("documents.id"), unique=True, index=True)
+    # queued -> extracted | extraction_failed | unsupported_format
+    # (no "scored"/"pending_review" yet — that's the scoring engine, #5)
     status: Mapped[str] = mapped_column(String, default="queued")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    result_json: Mapped[str | None] = mapped_column(String, nullable=True)
+    error_detail: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 @lru_cache

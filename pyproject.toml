@@ -11,6 +11,7 @@ dependencies = [
     "python-multipart",
     "argon2-cffi",
     "pyotp",
+    "pymupdf",
 ]
 
 [project.optional-dependencies]
@@ -31,3 +32,7 @@ where = ["src"]
 python_version = "3.10"
 strict = true
 mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = "fitz"
+ignore_missing_imports = true
