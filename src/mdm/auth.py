@@ -92,6 +92,7 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     token: str
     role: str
+    user_id: str
     mfa_enrollment_required: bool = False
 
 
@@ -175,7 +176,7 @@ def login(payload: LoginRequest) -> LoginResponse:
             user.locked_until = None
             session.commit()
             token = _issue_session(session, user, scope="mfa_enrollment", now=now)
-            return LoginResponse(token=token, role=user.role, mfa_enrollment_required=True)
+            return LoginResponse(token=token, role=user.role, user_id=user.id, mfa_enrollment_required=True)
 
         if is_approver and user.totp_enrolled:
             if payload.totp_code is None or not _verify_and_consume_totp(session, user, payload.totp_code):
@@ -187,7 +188,7 @@ def login(payload: LoginRequest) -> LoginResponse:
         session.commit()
 
         token = _issue_session(session, user, scope="full", now=now)
-        return LoginResponse(token=token, role=user.role)
+        return LoginResponse(token=token, role=user.role, user_id=user.id)
 
 
 def _authenticate(authorization: str | None, required_scope: str) -> User:

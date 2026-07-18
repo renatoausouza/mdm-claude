@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from mdm.auth import get_current_user
-from mdm.db import AuditLogEntry, DuplicateReviewCase, ExtractionJob, MasterRecord, User, get_session
+from mdm.db import AuditLogEntry, Document, DuplicateReviewCase, ExtractionJob, MasterRecord, User, get_session
 from mdm.domains import DOMAIN_SPECS, fields_dict, job_domain, normalized_field
 from mdm.review import (
     _claim_decision,
@@ -37,6 +37,8 @@ class DuplicateCaseResponse(BaseModel):
     match_key: str
     status: str
     comparisons: list[FieldComparison]
+    domain: str
+    uploaded_by: str | None = None
 
 
 def _load_case(session: Session, case_id: str) -> DuplicateReviewCase:
@@ -54,6 +56,7 @@ def get_duplicate_case(case_id: str, current_user: User = Depends(get_current_us
         assert matched is not None, "a DuplicateReviewCase always references a real MasterRecord"
         job = session.query(ExtractionJob).filter_by(id=case.extraction_job_id).first()
         assert job is not None and job.result_json is not None
+        document = session.query(Document).filter_by(id=job.document_id).first()
 
         spec = DOMAIN_SPECS[matched.domain]
         result = spec.result_model.model_validate_json(job.result_json)
@@ -81,6 +84,8 @@ def get_duplicate_case(case_id: str, current_user: User = Depends(get_current_us
             match_key=case.match_key,
             status=case.status,
             comparisons=comparisons,
+            domain=matched.domain,
+            uploaded_by=document.uploaded_by if document is not None else None,
         )
 
 

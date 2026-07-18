@@ -7,6 +7,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 
 from mdm import config, storage
@@ -230,6 +231,84 @@ def upload_document(
         return _to_response(document, job, duplicate_case.id if duplicate_case is not None else None)
 
 
+class JobSummary(BaseModel):
+    id: str
+    document_id: str
+    domain: str
+    status: str
+    created_at: datetime.datetime
+    uploaded_by: str | None
+    duplicate_review_case_id: str | None = None
+
+
+class JobListResponse(BaseModel):
+    jobs: list[JobSummary]
+    has_more: bool = False
+
+
+_JOB_LIST_LIMIT = 200
+
+
+@router.get("/jobs", response_model=JobListResponse)
+def list_jobs(
+    domain: str | None = None,
+    status: str | None = None,
+    current_user: User = Depends(get_current_user),
+) -> JobListResponse:
+    """Backs the frontend's review queues — list jobs, optionally filtered
+    to one domain and/or one status (e.g. domain=client&status=pending_review
+    for "everything a Client reviewer needs to look at"). Not in the
+    original API surface documented in solution-brief.md §16; added
+    alongside the web frontend since a queue view has no way to discover
+    job ids without one."""
+    if domain is not None and domain not in DOMAIN_SPECS:
+        raise HTTPException(
+            status_code=400, detail=f"Unknown domain: {domain!r} (must be one of {sorted(DOMAIN_SPECS)})"
+        )
+
+    with get_session() as session:
+        query = session.query(ExtractionJob, Document).join(Document, ExtractionJob.document_id == Document.id)
+        if domain == "supplier":
+            # job_domain() treats a null domain as "supplier" (pre-#8 rows)
+            # — match that same fallback here so a "supplier" filter finds
+            # any legacy rows too, not just ones with domain explicitly set.
+            query = query.filter(or_(ExtractionJob.domain == "supplier", ExtractionJob.domain.is_(None)))
+        elif domain is not None:
+            query = query.filter(ExtractionJob.domain == domain)
+        if status is not None:
+            query = query.filter(ExtractionJob.status == status)
+        # Fetch one extra row past the limit purely to detect truncation —
+        # cheap way to tell the caller "there are more, narrow your filters"
+        # instead of silently dropping the oldest pending jobs with no signal.
+        rows = query.order_by(ExtractionJob.created_at.desc()).limit(_JOB_LIST_LIMIT + 1).all()
+        has_more = len(rows) > _JOB_LIST_LIMIT
+        rows = rows[:_JOB_LIST_LIMIT]
+
+        job_ids = [job.id for job, _ in rows]
+        pending_cases = (
+            session.query(DuplicateReviewCase)
+            .filter(DuplicateReviewCase.extraction_job_id.in_(job_ids), DuplicateReviewCase.status == "pending")
+            .all()
+            if job_ids
+            else []
+        )
+        case_by_job = {case.extraction_job_id: case.id for case in pending_cases}
+
+        jobs = [
+            JobSummary(
+                id=job.id,
+                document_id=job.document_id,
+                domain=job_domain(job),
+                status=job.status,
+                created_at=job.created_at,
+                uploaded_by=document.uploaded_by,
+                duplicate_review_case_id=case_by_job.get(job.id),
+            )
+            for job, document in rows
+        ]
+    return JobListResponse(jobs=jobs, has_more=has_more)
+
+
 class JobResultResponse(BaseModel):
     id: str
     document_id: str
@@ -245,6 +324,7 @@ class JobResultResponse(BaseModel):
     error_detail: str | None
     scoring: ScoringResult | None
     duplicate_review_case_id: str | None = None
+    uploaded_by: str | None = None
 
 
 @router.get("/jobs/{job_id}/result", response_model=JobResultResponse)
@@ -259,6 +339,7 @@ def get_job_result(job_id: str, current_user: User = Depends(get_current_user)) 
         duplicate_case = (
             session.query(DuplicateReviewCase).filter_by(extraction_job_id=job.id, status="pending").first()
         )
+        document = session.query(Document).filter_by(id=job.document_id).first()
         return JobResultResponse(
             id=job.id,
             document_id=job.document_id,
@@ -268,4 +349,5 @@ def get_job_result(job_id: str, current_user: User = Depends(get_current_user)) 
             error_detail=job.error_detail,
             scoring=spec.score(result) if result is not None else None,
             duplicate_review_case_id=duplicate_case.id if duplicate_case is not None else None,
+            uploaded_by=document.uploaded_by if document is not None else None,
         )

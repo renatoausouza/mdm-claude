@@ -139,6 +139,33 @@ def test_matching_cnpj_creates_duplicate_case_instead_of_second_master_record(mo
         assert case.status == "pending"
 
 
+def test_duplicate_case_response_includes_domain_and_submitter_for_segregation_ui(monkeypatch) -> None:
+    # The frontend can't tell "am I the submitter of this candidate" without
+    # these — needed to warn/disable accept actions before the segregation
+    # check in resolve_duplicate (below) rejects them with a 403.
+    client = TestClient(app)
+    admin_token = _bootstrap_admin(client)
+    _register_initial_supplier(client, monkeypatch, admin_token)
+
+    new_submitter_token = _login_submitter(client, admin_token, "third-submitter")
+    login = client.post("/auth/login", json={"username": "third-submitter", "password": "sub-password"})
+    submitter_id = login.json()["user_id"]
+    job_id = _upload_pending_review_job(
+        client,
+        monkeypatch,
+        new_submitter_token,
+        {"legal_name": "ACME Ltda Atualizada", "email": "novo@acme.com", "telephone": None, "address": None},
+    )
+    result = client.get(f"/jobs/{job_id}/result", headers={"Authorization": f"Bearer {new_submitter_token}"})
+    case_id = result.json()["duplicate_review_case_id"]
+
+    case = client.get(f"/duplicates/{case_id}", headers={"Authorization": f"Bearer {new_submitter_token}"})
+    assert case.status_code == 200
+    body = case.json()
+    assert body["domain"] == "supplier"
+    assert body["uploaded_by"] == submitter_id
+
+
 def test_reviewer_sees_old_vs_new_values_side_by_side(monkeypatch) -> None:
     client = TestClient(app)
     admin_token = _bootstrap_admin(client)

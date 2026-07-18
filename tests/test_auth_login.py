@@ -17,6 +17,18 @@ def test_login_with_correct_credentials_succeeds() -> None:
     assert "token" in response.json()
 
 
+def test_login_response_includes_the_user_id() -> None:
+    # The frontend needs this to tell "am I the submitter of this candidate"
+    # apart from "someone else is" for segregation-of-duties (D6/FR-13) —
+    # role/token alone don't carry identity.
+    client = TestClient(app)
+    create = client.post("/users", json={"username": "gina", "password": "correct-password", "role": "submitter"})
+    user_id = create.json()["id"]
+
+    response = client.post("/auth/login", json={"username": "gina", "password": "correct-password"})
+    assert response.json()["user_id"] == user_id
+
+
 def test_login_with_wrong_password_fails() -> None:
     client = TestClient(app)
     _create_user(client, "erin", "correct-password")

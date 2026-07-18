@@ -42,6 +42,26 @@ python3 -m venv "$REPO_DIR/.venv"
 "$REPO_DIR/.venv/bin/pip" install --upgrade pip -q
 "$REPO_DIR/.venv/bin/pip" install -e "$REPO_DIR" -q
 
+command -v npm >/dev/null || {
+  echo "npm is required to build the frontend but was not found on PATH." >&2
+  exit 1
+}
+# npm ci (not install) so the build is reproducible from package-lock.json;
+# nginx serves the static output directly (deploy/nginx-mdm.conf), it never
+# goes through the Node process at runtime.
+( cd "$REPO_DIR/frontend" && npm ci -q && npm run build )
+
+# nginx (runs as www-data) reads the built SPA straight off disk, unlike
+# the backend which only mdm-svc needs to reach — same surgical-ACL
+# approach as the mdm-svc grants above, scoped to just the build output
+# rather than the whole repo (frontend/dist has no secrets, but there's no
+# reason to widen access further than necessary).
+setfacl -m "u:www-data:x" "$(dirname "$REPO_DIR")"
+setfacl -m "u:www-data:x" "$REPO_DIR"
+setfacl -m "u:www-data:x" "$REPO_DIR/frontend"
+setfacl -R -m "u:www-data:rX" "$REPO_DIR/frontend/dist"
+setfacl -R -d -m "u:www-data:rX" "$REPO_DIR/frontend/dist"
+
 # Template the repo path and port into the unit file rather than installing
 # it verbatim — mdm.service in source control has no hardcoded environment
 # assumptions, so it works regardless of where the repo is cloned or which
@@ -69,7 +89,7 @@ if [ ! -f /etc/nginx/ssl/mdm-selfsigned.crt ]; then
   chmod 600 /etc/nginx/ssl/mdm-selfsigned.key
 fi
 
-sed -e "s#__MDM_PORT__#${MDM_PORT}#g" \
+sed -e "s#__MDM_PORT__#${MDM_PORT}#g" -e "s#__REPO_DIR__#${REPO_DIR}#g" \
   "$REPO_DIR/deploy/nginx-mdm.conf" > /etc/nginx/sites-available/mdm.conf
 chmod 644 /etc/nginx/sites-available/mdm.conf
 ln -sf /etc/nginx/sites-available/mdm.conf /etc/nginx/sites-enabled/mdm.conf

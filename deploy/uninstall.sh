@@ -27,8 +27,14 @@ setfacl -x "u:${SERVICE_USER}" "$(dirname "$REPO_DIR")" 2>/dev/null || true
 setfacl -R -x "u:${SERVICE_USER}" "$REPO_DIR" 2>/dev/null || true
 setfacl -R -d -x "u:${SERVICE_USER}" "$REPO_DIR" 2>/dev/null || true
 
+setfacl -x "u:www-data" "$(dirname "$REPO_DIR")" 2>/dev/null || true
+setfacl -x "u:www-data" "$REPO_DIR" 2>/dev/null || true
+setfacl -x "u:www-data" "$REPO_DIR/frontend" 2>/dev/null || true
+setfacl -R -x "u:www-data" "$REPO_DIR/frontend/dist" 2>/dev/null || true
+setfacl -R -d -x "u:www-data" "$REPO_DIR/frontend/dist" 2>/dev/null || true
+
 if id "$SERVICE_USER" >/dev/null 2>&1; then
   userdel "$SERVICE_USER"
 fi
 
-echo "Done. Not removed: $REPO_DIR/.venv, /etc/nginx/ssl/mdm-selfsigned.{crt,key} (delete manually if desired)."
+echo "Done. Not removed: $REPO_DIR/.venv, $REPO_DIR/frontend/{node_modules,dist}, /etc/nginx/ssl/mdm-selfsigned.{crt,key} (delete manually if desired)."

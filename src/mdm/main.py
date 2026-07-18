@@ -5,6 +5,7 @@ import uvicorn
 from fastapi import Depends, FastAPI, Response
 
 from mdm import config
+from mdm.audit import router as audit_router
 from mdm.auth import router as auth_router
 from mdm.documents import router as documents_router
 from mdm.duplicates import router as duplicates_router
@@ -16,6 +17,7 @@ app.include_router(documents_router)
 app.include_router(auth_router)
 app.include_router(review_router)
 app.include_router(duplicates_router)
+app.include_router(audit_router)
 
 
 @app.get("/health")
