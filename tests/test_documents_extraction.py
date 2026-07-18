@@ -24,6 +24,13 @@ def _make_pdf_bytes(text: str) -> bytes:
     return content
 
 
+def _uploader_headers(client: TestClient, username: str = "uploader") -> dict[str, str]:
+    client.post("/users", json={"username": username, "password": "upload-password", "role": "submitter"})
+    login = client.post("/auth/login", json={"username": username, "password": "upload-password"})
+    token = login.json()["token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
 def test_uploading_a_pdf_triggers_extraction_and_result_is_retrievable(monkeypatch) -> None:
     monkeypatch.setattr(
         llm_extraction,
@@ -34,34 +41,44 @@ def test_uploading_a_pdf_triggers_extraction_and_result_is_retrievable(monkeypat
     )
 
     client = TestClient(app)
+    headers = _uploader_headers(client)
     pdf_bytes = _make_pdf_bytes("Fornecedor CNPJ: 11.223.344/0001-86\nEmail: contato@acme.com")
 
     upload_response = client.post(
-        "/documents", files={"file": ("invoice.pdf", pdf_bytes, "application/pdf")}
+        "/documents", files={"file": ("invoice.pdf", pdf_bytes, "application/pdf")}, headers=headers
     )
     assert upload_response.status_code == 201
     job_id = upload_response.json()["id"]
-    assert upload_response.json()["status"] == "extracted"
+    assert upload_response.json()["status"] == "pending_review"
 
-    result_response = client.get(f"/jobs/{job_id}/result")
+    result_response = client.get(f"/jobs/{job_id}/result", headers=headers)
     assert result_response.status_code == 200
     body = result_response.json()
-    assert body["status"] == "extracted"
+    assert body["status"] == "pending_review"
     assert body["result"]["cnpj"]["value"] == "11.223.344/0001-86"
     assert body["result"]["legal_name"]["value"] == "ACME Ltda"
     assert body["result"]["legal_name"]["provenance"]["source"] == "llm"
+    assert body["scoring"]["reliability"] in {"Excellent", "Good", "Low"}
 
 
 def test_result_for_unknown_job_id_is_404() -> None:
     client = TestClient(app)
-    response = client.get("/jobs/nonexistent/result")
+    headers = _uploader_headers(client)
+    response = client.get("/jobs/nonexistent/result", headers=headers)
     assert response.status_code == 404
+
+
+def test_result_without_authentication_is_rejected() -> None:
+    client = TestClient(app)
+    response = client.get("/jobs/nonexistent/result")
+    assert response.status_code == 401
 
 
 def test_non_pdf_upload_is_marked_unsupported_format() -> None:
     client = TestClient(app)
+    headers = _uploader_headers(client)
     upload_response = client.post(
-        "/documents", files={"file": ("data.txt", b"plain text content", "text/plain")}
+        "/documents", files={"file": ("data.txt", b"plain text content", "text/plain")}, headers=headers
     )
     assert upload_response.status_code == 201
     assert upload_response.json()["status"] == "unsupported_format"

@@ -24,7 +24,7 @@ def _make_document(retention_until: datetime.datetime | None, purged_at: datetim
             ExtractionJob(
                 id=str(uuid.uuid4()),
                 document_id=document_id,
-                status="extracted",
+                status="pending_review",
                 created_at=datetime.datetime.now(datetime.timezone.utc),
                 result_json='{"cnpj": null}',
             )

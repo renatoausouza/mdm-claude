@@ -64,6 +64,10 @@ class Document(Base):
     content_hash: Mapped[str] = mapped_column(String, unique=True, index=True)
     content_type: Mapped[str] = mapped_column(String)
     uploaded_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    # Nullable only for migration-safety on pre-#6 rows — every upload since
+    # #6 requires authentication, so this is always set going forward. Used
+    # for the submitter != approver segregation-of-duties check (D6).
+    uploaded_by: Mapped[str | None] = mapped_column(String, ForeignKey("users.id"), nullable=True)
     retention_until: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Set once the retention-purge job (#13) has deleted the stored file.
     # The row itself (and its ExtractionJob/result) is kept — only the raw
@@ -77,25 +81,69 @@ class ExtractionJob(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     document_id: Mapped[str] = mapped_column(String, ForeignKey("documents.id"), unique=True, index=True)
-    # queued -> extracted | extraction_failed | unsupported_format
-    # (no "scored"/"pending_review" yet — that's the scoring engine, #5)
+    # queued -> pending_review | extraction_failed | unsupported_format
+    # pending_review -> approved | rejected | needs_info (#6)
+    # needs_info -> approved | rejected (a reviewer can decide once
+    # clarified, without requiring a brand-new upload)
     status: Mapped[str] = mapped_column(String, default="queued")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
     result_json: Mapped[str | None] = mapped_column(String, nullable=True)
     error_detail: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
+class MasterRecord(Base):
+    """A registered record (Supplier | Client | Product, per `domain`).
+    Versioned: an approval that updates an existing record inserts a new row
+    rather than mutating one, so prior versions stay queryable for lineage
+    (§6/§15 of the solution brief). `record_key` is stable across a given
+    record's versions; `id` is unique per version row."""
+
+    __tablename__ = "master_records"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    domain: Mapped[str] = mapped_column(String, index=True)  # "supplier" | "client" | "product"
+    record_key: Mapped[str] = mapped_column(String, index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True)
+    fields_json: Mapped[str] = mapped_column(String)
+    source_job_id: Mapped[str] = mapped_column(String, ForeignKey("extraction_jobs.id"))
+    first_registered_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    last_updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ApprovalEvent(Base):
+    """One row per review decision (approve/reject/needs_info) — the
+    solution brief's §6/§11 record of who submitted, who decided, and what
+    was decided. Append-only alongside AuditLogEntry; this table is the
+    structured decision record, AuditLogEntry is the generic action log."""
+
+    __tablename__ = "approval_events"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    extraction_job_id: Mapped[str] = mapped_column(String, ForeignKey("extraction_jobs.id"), index=True)
+    submitted_by: Mapped[str | None] = mapped_column(String, ForeignKey("users.id"), nullable=True)
+    decided_by: Mapped[str] = mapped_column(String, ForeignKey("users.id"))
+    decision: Mapped[str] = mapped_column(String)  # "approved" | "rejected" | "needs_info"
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
+    decided_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    master_record_id: Mapped[str | None] = mapped_column(String, ForeignKey("master_records.id"), nullable=True)
+
+
 class AuditLogEntry(Base):
-    """Append-only record of actions taken on a document outside the normal
-    request path — currently just retention purges (#13), but the shape is
-    generic (action + detail) so future audited actions don't need a new
-    table."""
+    """Append-only record of actions taken on a document/job — retention
+    purges (#13) and submit/approve/reject/needs_info decisions (#6, FR-19).
+    `actor_user_id` is null for system-initiated actions (the purge job);
+    `before_json`/`after_json` capture the FR-19-required before/after
+    snapshot for human-initiated actions."""
 
     __tablename__ = "audit_log_entries"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     document_id: Mapped[str] = mapped_column(String, ForeignKey("documents.id"), index=True)
     action: Mapped[str] = mapped_column(String)
+    actor_user_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id"), nullable=True)
+    before_json: Mapped[str | None] = mapped_column(String, nullable=True)
+    after_json: Mapped[str | None] = mapped_column(String, nullable=True)
     occurred_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
     detail: Mapped[str | None] = mapped_column(String, nullable=True)
 

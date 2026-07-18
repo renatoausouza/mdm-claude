@@ -1,16 +1,19 @@
 import datetime
 import hashlib
+import json
 import logging
 import os
 import uuid
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 
 from mdm import config, storage
-from mdm.db import AuditLogEntry, Document, ExtractionJob, get_session
-from mdm.supplier_extraction import SupplierCandidateResult, run_supplier_extraction
+from mdm.auth import get_current_user
+from mdm.db import AuditLogEntry, Document, ExtractionJob, User, get_session
+from mdm.scoring import ScoringResult
+from mdm.supplier_extraction import SupplierCandidateResult, run_supplier_extraction, score_supplier
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +48,7 @@ def _to_response(document: Document, job: ExtractionJob) -> JobResponse:
 
 
 @router.post("/documents", response_model=JobResponse, status_code=201)
-def upload_document(file: UploadFile = File(...)) -> JobResponse:
+def upload_document(file: UploadFile = File(...), current_user: User = Depends(get_current_user)) -> JobResponse:
     extension = os.path.splitext(file.filename or "")[1].lower()
     if extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"Unsupported file type: {extension or '(none)'}")
@@ -79,6 +82,7 @@ def upload_document(file: UploadFile = File(...)) -> JobResponse:
                             id=str(uuid.uuid4()),
                             document_id=existing_document.id,
                             action="restored",
+                            actor_user_id=current_user.id,
                             occurred_at=datetime.datetime.now(datetime.timezone.utc),
                             detail="Re-uploaded after retention purge; file restored to storage",
                         )
@@ -89,6 +93,24 @@ def upload_document(file: UploadFile = File(...)) -> JobResponse:
                     status_code=500,
                     detail="Document record exists but its stored file is missing",
                 )
+            if current_user.id != existing_document.uploaded_by:
+                # A different user re-uploading byte-identical content is
+                # still their own submit action and belongs in the audit
+                # trail (FR-19) — even though it doesn't change
+                # Document.uploaded_by (that stays the original submitter,
+                # which is what the segregation-of-duties check keys off).
+                session.add(
+                    AuditLogEntry(
+                        id=str(uuid.uuid4()),
+                        document_id=existing_document.id,
+                        action="submitted",
+                        actor_user_id=current_user.id,
+                        after_json=json.dumps({"job_status": job.status}),
+                        detail="Re-upload of already-registered content by a different user",
+                        occurred_at=datetime.datetime.now(datetime.timezone.utc),
+                    )
+                )
+                session.commit()
             return _to_response(existing_document, job)
 
         document_id = str(uuid.uuid4())
@@ -97,6 +119,7 @@ def upload_document(file: UploadFile = File(...)) -> JobResponse:
             content_hash=content_hash,
             content_type=file.content_type or "application/octet-stream",
             uploaded_at=datetime.datetime.now(datetime.timezone.utc),
+            uploaded_by=current_user.id,
             retention_until=_compute_retention_until(),
         )
         job = ExtractionJob(
@@ -135,7 +158,11 @@ def upload_document(file: UploadFile = File(...)) -> JobResponse:
             try:
                 result = run_supplier_extraction(content)
                 job.result_json = result.model_dump_json()
-                job.status = "extracted"
+                # Scored candidates always land in PendingReview regardless
+                # of reliability tier — nothing may be auto-approved (D14,
+                # FR-12); the score itself is exposed via GET .../result for
+                # the reviewer, not used to bypass review here.
+                job.status = "pending_review"
             except Exception:  # document content is untrusted; must not crash the upload request
                 logger.exception("Supplier extraction failed for document %s", document_id)
                 job.status = "extraction_failed"
@@ -145,6 +172,17 @@ def upload_document(file: UploadFile = File(...)) -> JobResponse:
             # rather than leaving the job at "queued" forever with no
             # signal to the caller that it will never advance.
             job.status = "unsupported_format"
+
+        session.add(
+            AuditLogEntry(
+                id=str(uuid.uuid4()),
+                document_id=document_id,
+                action="submitted",
+                actor_user_id=current_user.id,
+                after_json=json.dumps({"job_status": job.status}),
+                occurred_at=datetime.datetime.now(datetime.timezone.utc),
+            )
+        )
         session.commit()
 
         return _to_response(document, job)
@@ -156,10 +194,11 @@ class JobResultResponse(BaseModel):
     status: str
     result: SupplierCandidateResult | None
     error_detail: str | None
+    scoring: ScoringResult | None
 
 
 @router.get("/jobs/{job_id}/result", response_model=JobResultResponse)
-def get_job_result(job_id: str) -> JobResultResponse:
+def get_job_result(job_id: str, current_user: User = Depends(get_current_user)) -> JobResultResponse:
     with get_session() as session:
         job = session.query(ExtractionJob).filter_by(id=job_id).first()
         if job is None:
@@ -171,4 +210,5 @@ def get_job_result(job_id: str) -> JobResultResponse:
             status=job.status,
             result=result,
             error_detail=job.error_detail,
+            scoring=score_supplier(result) if result is not None else None,
         )
