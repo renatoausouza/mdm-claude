@@ -168,13 +168,13 @@ def test_missing_sku_does_not_block_scoring_or_approval(monkeypatch) -> None:
     assert response.status_code == 200
 
 
-def test_reuploading_an_invoice_with_a_different_price_for_a_registered_product_creates_no_duplicate_case(
+def test_reuploading_an_invoice_with_a_different_price_creates_a_duplicate_case_matched_by_sku_only(
     monkeypatch,
 ) -> None:
-    """AC: price must never be part of the match/diff — #10 doesn't wire up
-    Product duplicate detection at all yet (that's #11), so there is
-    structurally no duplicate-review path for Product to trigger on price
-    (or anything else) today; this proves that by construction."""
+    """AC: price must never be part of the match/diff. With #11's SKU-based
+    detection now wired up, re-uploading the same SKU at a different price
+    DOES create a duplicate case (matched purely on SKU) — but price must
+    never appear in the match key or the side-by-side comparison."""
     client = TestClient(app)
     admin_token = _bootstrap_admin(client)
     approver_token = _login_approver(client, admin_token, "product-approver5")
@@ -194,38 +194,13 @@ def test_reuploading_an_invoice_with_a_different_price_for_a_registered_product_
         different_price,
         invoice_text="Item: Parafuso Sextavado M8, SKU PSX-M8-001 -- second invoice, different price",
     )
-    assert second_job_id != job_id  # confirms this is genuinely a second document, not a dedup hit
+    assert second_job_id != job_id  # confirms this is genuinely a second document
 
     result = client.get(f"/jobs/{second_job_id}/result", headers={"Authorization": f"Bearer {approver_token}"})
-    assert result.json()["duplicate_review_case_id"] is None
+    case_id = result.json()["duplicate_review_case_id"]
+    assert case_id is not None  # matched by SKU, despite the price difference
+    assert result.json()["result"].get("price") is not None  # price is still extracted as evidence...
 
-
-def test_approving_two_products_with_the_same_sku_does_not_get_stuck(monkeypatch) -> None:
-    """Regression test: Product has no duplicate-detection/resolution path
-    yet (#11), so approving a second candidate for the same SKU must not
-    hit the DB's one-current-record-per-key constraint and get permanently
-    stuck in an unresolvable 409 (there is no case to point it at until #11
-    ships) — reordering the same product is an ordinary scenario, not a
-    concurrency edge case."""
-    client = TestClient(app)
-    admin_token = _bootstrap_admin(client)
-    approver_token = _login_approver(client, admin_token, "product-approver6")
-
-    first_job = _upload_product_job(client, monkeypatch, {"Authorization": f"Bearer {approver_token}"}, _FULL_PRODUCT)
-    first_response = client.post(
-        f"/jobs/{first_job}/approve", headers={"Authorization": f"Bearer {approver_token}"}
-    )
-    assert first_response.status_code == 200
-
-    second_job = _upload_product_job(
-        client,
-        monkeypatch,
-        {"Authorization": f"Bearer {approver_token}"},
-        _FULL_PRODUCT,
-        invoice_text="Item: Parafuso Sextavado M8, SKU PSX-M8-001 -- reorder invoice",
-    )
-    second_response = client.post(
-        f"/jobs/{second_job}/approve", headers={"Authorization": f"Bearer {approver_token}"}
-    )
-    assert second_response.status_code == 200
-    assert second_response.json()["master_record_id"] != first_response.json()["master_record_id"]
+    case = client.get(f"/duplicates/{case_id}", headers={"Authorization": f"Bearer {approver_token}"})
+    field_names = {c["field"] for c in case.json()["comparisons"]}
+    assert "price" not in field_names  # ...but never part of the match/diff (D10)

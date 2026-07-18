@@ -42,22 +42,30 @@ def find_current_master_record(session: Session, domain: str, record_key: str) -
     return session.query(MasterRecord).filter_by(domain=domain, record_key=record_key, is_current=True).first()
 
 
-def detect_supplier_duplicate(
-    session: Session, job: ExtractionJob, result: SupplierCandidateResult
-) -> DuplicateReviewCase | None:
-    """Exact-match CNPJ dedup against already-registered current Supplier
-    records (FR-09, #7). Never merges anything itself — only flags for a
-    human (D4/D2); the caller is responsible for adding the returned case to
+def detect_duplicate_by_key(session: Session, job: ExtractionJob, result: BaseModel) -> DuplicateReviewCase | None:
+    """Exact-match dedup against already-registered current records, keyed
+    on the domain's natural field — CNPJ for Supplier (FR-09, #7), CPF/CNPJ
+    for Client (#9), SKU for Product (#11). Never merges anything itself —
+    only flags for a human (D4/D2); the caller adds the returned case to
     the session (it isn't committed here).
 
-    The only entry in DOMAIN_SPECS with a detect_duplicate today — #9
-    (client) and #11 (product) haven't been implemented yet, so those specs
-    below have detect_duplicate=None and get no last-resort approval-time
-    check either (see review.py's approve_job)."""
-    if result.cnpj is None:
+    Looks up the domain's key_field from DOMAIN_SPECS via job.domain rather
+    than being one copy-pasted function per domain — the matching rule is
+    identical everywhere ("exact match on this one field, or no match at
+    all"), so one function serves every domain that registers a key_field.
+    No fuzzy/similarity matching exists here or anywhere else in the
+    matching path: a candidate missing its key field always returns None,
+    never falls back to a weaker key (FR-11's "no-SKU-always-manual" for
+    Product is just this same rule applied to any domain's missing key)."""
+    domain = job_domain(job)
+    key_field = DOMAIN_SPECS[domain].key_field
+    if key_field is None:
         return None
-    match_key = normalized_field(result.cnpj)
-    matched = find_current_master_record(session, "supplier", match_key)
+    field = getattr(result, key_field, None)
+    if field is None:
+        return None
+    match_key = normalized_field(field)
+    matched = find_current_master_record(session, domain, match_key)
     if matched is None:
         return None
     return DuplicateReviewCase(
@@ -96,7 +104,7 @@ DOMAIN_SPECS: dict[str, DomainRegistration] = {
         key_field="cnpj",
         requires_segregation=True,
         score=score_supplier,  # type: ignore[arg-type]
-        detect_duplicate=detect_supplier_duplicate,  # type: ignore[arg-type]
+        detect_duplicate=detect_duplicate_by_key,
         extract=run_supplier_extraction,
     ),
     "client": DomainRegistration(
@@ -107,7 +115,7 @@ DOMAIN_SPECS: dict[str, DomainRegistration] = {
         # unlike Supplier (#8's ticket text, FR-13's Client carve-out).
         requires_segregation=False,
         score=score_client,  # type: ignore[arg-type]
-        detect_duplicate=None,  # #9, not yet implemented
+        detect_duplicate=detect_duplicate_by_key,  # #9
         extract=run_client_extraction,
     ),
     "product": DomainRegistration(
@@ -116,7 +124,7 @@ DOMAIN_SPECS: dict[str, DomainRegistration] = {
         key_field="sku",
         requires_segregation=False,
         score=score_product,  # type: ignore[arg-type]
-        detect_duplicate=None,  # #11, not yet implemented
+        detect_duplicate=detect_duplicate_by_key,  # #11 — no-SKU never matches (returns None), see docstring
         extract=run_product_extraction,
     ),
 }

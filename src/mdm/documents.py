@@ -198,9 +198,9 @@ def upload_document(
                 job.status = "pending_review"
                 # Held alongside PendingReview, per the state machine in
                 # solution-brief.md §7 — never blocks scoring/review, only
-                # adds a case for #7's duplicate-resolution path to pick up.
-                # Only Supplier (#7) has a detect_duplicate wired up today;
-                # #9/#11 add Client/Product dedup the same way.
+                # adds a case for the duplicate-resolution path (#7
+                # Supplier, #9 Client, #11 Product all wire up
+                # detect_duplicate the same way) to pick up.
                 if spec.detect_duplicate is not None:
                     duplicate_case = spec.detect_duplicate(session, job, result)
                     if duplicate_case is not None:

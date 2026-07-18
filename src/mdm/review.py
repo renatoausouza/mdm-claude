@@ -23,6 +23,14 @@ _DECIDABLE_STATUSES = {"pending_review", "needs_info"}
 
 class ReviewDecisionRequest(BaseModel):
     notes: str | None = None
+    # Lets a reviewer supply/override a master field the candidate itself
+    # didn't extract — e.g. assigning a SKU to a no-SKU Product before
+    # approving it as new (#11's "assigning a SKU during review if
+    # desired"). Validated against the domain's master_fields in
+    # approve_job; ignored by reject_job/request_info (this request shape
+    # is shared across all three, but only approve creates/updates a
+    # MasterRecord).
+    field_overrides: dict[str, str] | None = None
 
 
 class RequestInfoRequest(BaseModel):
@@ -164,6 +172,18 @@ def approve_job(
         result = spec.result_model.model_validate_json(job.result_json)
         fields = fields_dict(result, spec.master_fields)
 
+        if payload is not None and payload.field_overrides:
+            unknown = set(payload.field_overrides) - set(spec.master_fields)
+            if unknown:
+                raise HTTPException(
+                    status_code=422, detail=f"Unknown field(s) in field_overrides: {sorted(unknown)}"
+                )
+            # Applied before the duplicate check below, on purpose: a
+            # reviewer manually assigning a SKU that happens to already be
+            # registered must still be routed into the normal duplicate
+            # flow, not silently create a second record for it.
+            fields.update(payload.field_overrides)
+
         # Last-resort duplicate check: detect_duplicate (where the domain
         # has one) normally runs once at upload time (documents.py), but a
         # second candidate for the same key uploaded *before* the first was
@@ -197,16 +217,17 @@ def approve_job(
         now = datetime.datetime.now(datetime.timezone.utc)
         # The domain's natural key (normalized CNPJ/CPF/SKU) only when the
         # domain actually HAS duplicate detection wired up (detect_duplicate
-        # is not None) — today that's Supplier only (#7); Client/Product's
-        # key_field (#9/#11, not yet implemented) is registered metadata for
-        # when that lands, not something safe to use as record_key yet. The
-        # DB enforces at most one is_current row per (domain, record_key)
-        # (db.py's unique index); using the natural key here for a domain
-        # with no detect_duplicate/resolve path means a second approval of
-        # the "same" client/product would hit that constraint and get stuck
-        # in an unresolvable 409 forever, since there is no case to point it
-        # at. A fresh random key every time sidesteps that collision
-        # entirely until #9/#11 add the matching detection + resolution.
+        # is not None) — true for all three domains today (#7 Supplier, #9
+        # Client, #11 Product all register detect_duplicate_by_key). The
+        # guard stays here (rather than assuming it's always set) because a
+        # future domain could still be registered with key_field set but
+        # detect_duplicate=None before its dedup ships, same as Client/
+        # Product briefly were: the DB enforces at most one is_current row
+        # per (domain, record_key) (db.py's unique index), so using the
+        # natural key for a domain with no detect_duplicate/resolve path
+        # would let a second approval of the "same" record hit that
+        # constraint and get stuck in an unresolvable 409, with no case to
+        # point it at. A fresh random key sidesteps that until dedup exists.
         natural_key = None
         if spec.key_field is not None and spec.detect_duplicate is not None:
             natural_key = fields.get(spec.key_field)

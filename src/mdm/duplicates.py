@@ -9,9 +9,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from mdm.auth import get_current_user
-from mdm.db import DuplicateReviewCase, ExtractionJob, MasterRecord, User, get_session
-from mdm.domains import DOMAIN_SPECS, fields_dict, normalized_field
-from mdm.review import _claim_decision, _load_decidable_job, _record_decision, _require_approver
+from mdm.db import AuditLogEntry, DuplicateReviewCase, ExtractionJob, MasterRecord, User, get_session
+from mdm.domains import DOMAIN_SPECS, fields_dict, job_domain, normalized_field
+from mdm.review import (
+    _claim_decision,
+    _load_decidable_job,
+    _record_decision,
+    _reject_if_duplicate_pending,
+    _require_approver,
+)
 
 router = APIRouter()
 
@@ -253,3 +259,147 @@ def resolve_duplicate(
             ) from None
 
         return ResolveDuplicateResponse(case_id=case.id, status=case.status, master_record_id=new_record.id)
+
+
+class MasterRecordSearchResult(BaseModel):
+    id: str
+    domain: str
+    record_key: str
+    version: int
+    fields: dict[str, str]
+
+
+class MasterRecordSearchResponse(BaseModel):
+    results: list[MasterRecordSearchResult]
+
+
+@router.get("/master-records/search", response_model=MasterRecordSearchResponse)
+def search_master_records(
+    domain: str, q: str = "", current_user: User = Depends(get_current_user)
+) -> MasterRecordSearchResponse:
+    """Manual search tool (#11) for a reviewer to find an existing record to
+    link a candidate against — e.g. a no-SKU Product candidate, which
+    detect_duplicate_by_key (domains.py) never auto-matches (FR-11: no
+    NCM+name fallback key, no fuzzy/similarity matching, ever). This
+    endpoint itself does no matching or linking — it's plain substring
+    search over current records' field values for a human to browse, not an
+    automated matching algorithm; the actual link only happens if the
+    reviewer explicitly calls POST /jobs/{job_id}/link-duplicate with a
+    specific master_record_id they picked from these results. Approver-only
+    (like resolve_duplicate/link_duplicate): every current record's full
+    field set — including PII (CPF/CNPJ, email, phone, address) — is
+    returned unfiltered, so this is not a submitter-safe browse surface."""
+    _require_approver(current_user)
+
+    if domain not in DOMAIN_SPECS:
+        raise HTTPException(status_code=400, detail=f"Unknown domain: {domain!r} (must be one of {sorted(DOMAIN_SPECS)})")
+
+    query = q.strip().lower()
+    with get_session() as session:
+        records = session.query(MasterRecord).filter_by(domain=domain, is_current=True).all()
+
+    results: list[MasterRecordSearchResult] = []
+    # Capped rather than paginated — this is a reviewer-driven lookup tool
+    # for a specific candidate, not a browsing/listing feature, so "first
+    # 50 matches, narrow your query" is enough for now without building out
+    # real pagination the rest of this API doesn't have either.
+    for record in records:
+        if len(results) >= 50:
+            break
+        fields = json.loads(record.fields_json)
+        haystack = " ".join(str(v) for v in fields.values()).lower()
+        if query and query not in haystack:
+            continue
+        results.append(
+            MasterRecordSearchResult(
+                id=record.id, domain=record.domain, record_key=record.record_key, version=record.version, fields=fields
+            )
+        )
+    return MasterRecordSearchResponse(results=results)
+
+
+class LinkDuplicateRequest(BaseModel):
+    master_record_id: str
+    notes: str | None = None
+
+
+class LinkDuplicateResponse(BaseModel):
+    case_id: str
+    status: str
+
+
+@router.post("/jobs/{job_id}/link-duplicate", response_model=LinkDuplicateResponse, status_code=201)
+def link_duplicate(
+    job_id: str, payload: LinkDuplicateRequest, current_user: User = Depends(get_current_user)
+) -> LinkDuplicateResponse:
+    """Manually create a DuplicateReviewCase against a reviewer-chosen
+    record (#11's "manual search/link tooling") — the human-driven
+    counterpart to detect_duplicate_by_key's automatic exact-match case
+    creation. Once created, the case goes through the exact same side-by-
+    side/accept/reject/partial resolution as any auto-detected case
+    (GET/POST /duplicates/{case_id}...)."""
+    _require_approver(current_user)
+
+    with get_session() as session:
+        job, document = _load_decidable_job(session, job_id)
+        # A job can only ever have one DuplicateReviewCase (the DB enforces
+        # a unique extraction_job_id) — refuse to attempt a second one
+        # rather than let that surface as a raw IntegrityError.
+        _reject_if_duplicate_pending(session, job)
+
+        matched = session.query(MasterRecord).filter_by(id=payload.master_record_id, is_current=True).first()
+        if matched is None:
+            raise HTTPException(status_code=404, detail="No current master record found with that id")
+
+        domain = job_domain(job)
+        if matched.domain != domain:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot link a {domain!r} candidate to a {matched.domain!r} record",
+            )
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        case = DuplicateReviewCase(
+            id=str(uuid.uuid4()),
+            extraction_job_id=job.id,
+            matched_master_record_id=matched.id,
+            # Not derived from any field — a reviewer-chosen link, not an
+            # exact-match result. FR-11's "no fuzzy/similarity matching"
+            # constrains the AUTOMATIC path (detect_duplicate_by_key); this
+            # is an explicit, human-confirmed decision, not the system
+            # guessing at a weaker key.
+            match_key="manual",
+            status="pending",
+            created_at=now,
+        )
+        session.add(case)
+        session.add(
+            AuditLogEntry(
+                id=str(uuid.uuid4()),
+                document_id=document.id,
+                action="link-duplicate",  # FR-19's own vocabulary for this action
+                actor_user_id=current_user.id,
+                before_json=json.dumps({"job_status": job.status}),
+                after_json=json.dumps(
+                    {"duplicate_review_case_id": case.id, "matched_master_record_id": matched.id, "notes": payload.notes}
+                ),
+                occurred_at=now,
+            )
+        )
+        try:
+            session.commit()
+        except IntegrityError:
+            # _reject_if_duplicate_pending above is a read-then-write check,
+            # not a lock — two concurrent link/resolve attempts for the same
+            # job can both pass it before either commits. The DB's unique
+            # extraction_job_id constraint on DuplicateReviewCase is the
+            # actual backstop; this just turns the loser's raw IntegrityError
+            # into the same clean 409 approve_job/resolve_duplicate give for
+            # their own analogous races.
+            session.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail="This job was just linked to a duplicate case by another request",
+            ) from None
+
+        return LinkDuplicateResponse(case_id=case.id, status=case.status)

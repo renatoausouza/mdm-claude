@@ -149,16 +149,9 @@ def test_approving_a_client_creates_a_versioned_master_record(monkeypatch) -> No
         assert record.domain == "client"
         assert record.version == 1
         assert record.is_current is True
-        # Client has no duplicate-detection/resolution path yet (#9), so
-        # record_key is a fresh random id, not the normalized tax_id — using
-        # the natural key here without #9's resolve-a-collision machinery
-        # would let a second approval for the same person/company hit the
-        # DB's one-current-per-key constraint and get stuck with no way to
-        # resolve it.
-        assert record.record_key != "11144477735"
+        assert record.record_key == "11144477735"  # normalized CPF (#9's natural key)
         fields = json.loads(record.fields_json)
         assert fields["name"] == "Joao Silva"
-        assert fields["tax_id"] == "11144477735"  # still captured on the record itself
         assert fields["tax_id"] == "11144477735"
 
 
@@ -208,37 +201,8 @@ def test_client_scoring_uses_client_required_fields_not_supplier(monkeypatch) ->
     assert scoring["reliability"] in {"Excellent", "Good"}
 
 
-def test_approving_two_clients_with_the_same_tax_id_does_not_get_stuck(monkeypatch) -> None:
-    """Regression test: Client has no duplicate-detection/resolution path
-    yet (#9), so approving a second candidate for the same CPF must not
-    hit the DB's one-current-record-per-key constraint and get permanently
-    stuck in an unresolvable 409 (there is no case to point it at until #9
-    ships) — a very ordinary scenario (the same person appears in two
-    documents) that has nothing to do with true concurrency."""
-    client = TestClient(app)
-    admin_token = _bootstrap_admin(client)
-    approver_token = _login_approver(client, admin_token, "client-approver6")
-
-    first_job = _upload_client_job(
-        client,
-        monkeypatch,
-        {"Authorization": f"Bearer {approver_token}"},
-        {"name": "Joao Silva", "email": "joao@example.com", "telephone": None, "address": None},
-    )
-    first_response = client.post(
-        f"/jobs/{first_job}/approve", headers={"Authorization": f"Bearer {approver_token}"}
-    )
-    assert first_response.status_code == 200
-
-    second_job = _upload_client_job(
-        client,
-        monkeypatch,
-        {"Authorization": f"Bearer {approver_token}"},
-        {"name": "Joao Silva", "email": "joao-novo@example.com", "telephone": None, "address": None},
-        invoice_text="Destinatario CPF: 111.444.777-35 -- second document, same person",
-    )
-    second_response = client.post(
-        f"/jobs/{second_job}/approve", headers={"Authorization": f"Bearer {approver_token}"}
-    )
-    assert second_response.status_code == 200
-    assert second_response.json()["master_record_id"] != first_response.json()["master_record_id"]
+# Duplicate-detection/resolution behavior for a second Client candidate with
+# a matching tax_id is covered by tests/test_client_duplicates.py (#9) —
+# uploading two Clients for the same CPF/CNPJ now creates a
+# DuplicateReviewCase (like Supplier, #7) rather than two independent
+# MasterRecords, so that scenario belongs there, not here.
