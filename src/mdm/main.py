@@ -7,6 +7,7 @@ from fastapi import Depends, FastAPI, Response
 from mdm import config
 from mdm.auth import router as auth_router
 from mdm.documents import router as documents_router
+from mdm.duplicates import router as duplicates_router
 from mdm.ollama_client import OllamaClient
 from mdm.review import router as review_router
 
@@ -14,6 +15,7 @@ app = FastAPI(title="mdm")
 app.include_router(documents_router)
 app.include_router(auth_router)
 app.include_router(review_router)
+app.include_router(duplicates_router)
 
 
 @app.get("/health")

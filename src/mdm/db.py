@@ -2,7 +2,7 @@ import datetime
 import os
 from functools import lru_cache
 
-from sqlalchemy import Boolean, DateTime, Engine, ForeignKey, Integer, String, create_engine, inspect, text
+from sqlalchemy import Boolean, DateTime, Engine, ForeignKey, Index, Integer, String, create_engine, inspect, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.schema import CreateColumn
@@ -99,6 +99,21 @@ class MasterRecord(Base):
     record's versions; `id` is unique per version row."""
 
     __tablename__ = "master_records"
+    __table_args__ = (
+        # At most one is_current=True row per (domain, record_key) — the
+        # actual guarantee behind "never two current records for the same
+        # supplier" (#7). Application-level pre-checks (review.py,
+        # duplicates.py) exist to give a clean 409 in the common case, but
+        # this index is what makes the invariant hold even if two writers
+        # race past those checks at the same instant.
+        Index(
+            "ix_master_records_one_current_per_key",
+            "domain",
+            "record_key",
+            unique=True,
+            sqlite_where=text("is_current = 1"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     domain: Mapped[str] = mapped_column(String, index=True)  # "supplier" | "client" | "product"
@@ -109,6 +124,27 @@ class MasterRecord(Base):
     source_job_id: Mapped[str] = mapped_column(String, ForeignKey("extraction_jobs.id"))
     first_registered_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
     last_updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+
+
+class DuplicateReviewCase(Base):
+    """A candidate whose match key (normalized CNPJ/CPF/SKU) matched an
+    already-registered current MasterRecord (#7, D4/D2/FR-09/FR-10). Never
+    auto-merged — held for a human to accept/reject/partially-accept,
+    side-by-side against the existing record. One case per job: a job with
+    no matching record never gets one."""
+
+    __tablename__ = "duplicate_review_cases"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    extraction_job_id: Mapped[str] = mapped_column(String, ForeignKey("extraction_jobs.id"), unique=True, index=True)
+    matched_master_record_id: Mapped[str] = mapped_column(String, ForeignKey("master_records.id"))
+    match_key: Mapped[str] = mapped_column(String, index=True)
+    # "pending" | "accepted" | "rejected" | "partially_accepted"
+    status: Mapped[str] = mapped_column(String, default="pending")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    reviewed_by: Mapped[str | None] = mapped_column(String, ForeignKey("users.id"), nullable=True)
+    reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    accepted_fields_json: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class ApprovalEvent(Base):

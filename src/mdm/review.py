@@ -6,11 +6,21 @@ from typing import cast
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import CursorResult, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from mdm.auth import UserRole, get_current_user
-from mdm.db import ApprovalEvent, AuditLogEntry, Document, ExtractionJob, MasterRecord, User, get_session
-from mdm.supplier_extraction import SupplierCandidateResult
+from mdm.db import (
+    ApprovalEvent,
+    AuditLogEntry,
+    Document,
+    DuplicateReviewCase,
+    ExtractionJob,
+    MasterRecord,
+    User,
+    get_session,
+)
+from mdm.supplier_extraction import FieldValue, SupplierCandidateResult
 
 router = APIRouter()
 
@@ -33,6 +43,57 @@ def _job_domain(job: ExtractionJob) -> str:
     # (#4) — there's no per-job domain field yet because no other domain's
     # extraction exists to disambiguate against (#8/#10 will need one).
     return "supplier"
+
+
+def _normalized_field(field: FieldValue) -> str:
+    # Single source of truth for "which representation of a field goes into
+    # a MasterRecord/match key" — used for both record_key (this module) and
+    # DuplicateReviewCase.match_key (duplicates.py), so the two can never
+    # silently diverge (they're the same value by construction, not by two
+    # independently-written expressions kept in sync by hand).
+    return field.normalized_value or field.value
+
+
+def _supplier_fields_dict(result: SupplierCandidateResult) -> dict[str, str]:
+    return {
+        name: _normalized_field(field)
+        for name in _SUPPLIER_MASTER_FIELDS
+        if (field := getattr(result, name)) is not None
+    }
+
+
+def _find_current_master_record(session: Session, domain: str, record_key: str) -> MasterRecord | None:
+    return session.query(MasterRecord).filter_by(domain=domain, record_key=record_key, is_current=True).first()
+
+
+def detect_supplier_duplicate(
+    session: Session, job: ExtractionJob, result: SupplierCandidateResult
+) -> DuplicateReviewCase | None:
+    """Exact-match CNPJ dedup against already-registered current Supplier
+    records (FR-09, #7). Never merges anything itself — only flags for a
+    human (D4/D2); the caller is responsible for adding the returned case to
+    the session (it isn't committed here).
+
+    Called from two places: documents.py right after a candidate is scored
+    (so the case exists alongside PendingReview, per the state machine in
+    solution-brief.md §7), and approve_job below as a last-resort check —
+    detection only runs once at upload time, so a second candidate for the
+    same CNPJ uploaded *before* the first is approved would otherwise slip
+    through with no case at all (neither upload could see the other yet)."""
+    if result.cnpj is None:
+        return None
+    match_key = _normalized_field(result.cnpj)
+    matched = _find_current_master_record(session, "supplier", match_key)
+    if matched is None:
+        return None
+    return DuplicateReviewCase(
+        id=str(uuid.uuid4()),
+        extraction_job_id=job.id,
+        matched_master_record_id=matched.id,
+        match_key=match_key,
+        status="pending",
+        created_at=datetime.datetime.now(datetime.timezone.utc),
+    )
 
 
 class ReviewDecisionRequest(BaseModel):
@@ -65,6 +126,21 @@ def _load_decidable_job(session: Session, job_id: str) -> tuple[ExtractionJob, D
     document = session.query(Document).filter_by(id=job.document_id).first()
     assert document is not None, "every ExtractionJob row must have a matching Document"
     return job, document
+
+
+def _reject_if_duplicate_pending(session: Session, job: ExtractionJob) -> None:
+    """approve/reject/request-info (this module) must not touch a job that
+    has an unresolved DuplicateReviewCase (#7) — that job's MasterRecord
+    decision belongs to POST /duplicates/{case_id}/resolve instead, which
+    calls _load_decidable_job directly and does NOT call this check (it IS
+    the resolution path for that exact case)."""
+    pending = session.query(DuplicateReviewCase).filter_by(extraction_job_id=job.id, status="pending").first()
+    if pending is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job has a pending duplicate review case ({pending.id}) — "
+            "resolve it via POST /duplicates/{case_id}/resolve instead",
+        )
 
 
 def _claim_decision(session: Session, job: ExtractionJob, new_status: str) -> bool:
@@ -145,19 +221,46 @@ def approve_job(
         job, document = _load_decidable_job(session, job_id)
         domain = _job_domain(job)
 
+        # Segregation-of-duties is checked before the duplicate-pending
+        # check below: a submitter blocked from approving their own work
+        # should always get a plain 403, not a 409 that incidentally
+        # reveals duplicate-detection state to someone who can't act on it
+        # either way.
         if domain in _SEGREGATION_REQUIRED_DOMAINS and current_user.id == document.uploaded_by:
             raise HTTPException(
                 status_code=403,
                 detail="Segregation of duties: you cannot approve your own submission for this domain",
             )
 
+        _reject_if_duplicate_pending(session, job)
+
         assert job.result_json is not None, "a decidable job always has a scored result"
         result = SupplierCandidateResult.model_validate_json(job.result_json)
-        fields = {
-            name: field.normalized_value or field.value
-            for name in _SUPPLIER_MASTER_FIELDS
-            if (field := getattr(result, name)) is not None
-        }
+        fields = _supplier_fields_dict(result)
+
+        # Last-resort duplicate check: detect_supplier_duplicate normally
+        # runs once at upload time (documents.py), but a second candidate
+        # for the same CNPJ uploaded *before* the first was approved has no
+        # match to see yet — neither upload creates a case, and without this
+        # check both could sail through this endpoint independently and
+        # register two "current" MasterRecords for the same supplier.
+        existing_match = _find_current_master_record(session, domain, fields["cnpj"]) if "cnpj" in fields else None
+        if existing_match is not None:
+            case = DuplicateReviewCase(
+                id=str(uuid.uuid4()),
+                extraction_job_id=job.id,
+                matched_master_record_id=existing_match.id,
+                match_key=fields["cnpj"],
+                status="pending",
+                created_at=datetime.datetime.now(datetime.timezone.utc),
+            )
+            session.add(case)
+            session.commit()
+            raise HTTPException(
+                status_code=409,
+                detail=f"A matching Supplier record already exists — duplicate review case "
+                f"{case.id} created; resolve it via POST /duplicates/{case.id}/resolve instead",
+            )
 
         old_status = job.status
         if not _claim_decision(session, job, "approved"):
@@ -168,12 +271,12 @@ def approve_job(
             id=str(uuid.uuid4()),
             domain=domain,
             # normalized CNPJ when present — the same deterministic key #7's
-            # dedup/link matching will query on, so a future approval of the
-            # same supplier can attach a new version to this record_key
-            # instead of #7 needing a one-off migration to backfill it.
-            # Falls back to a random key only when CNPJ is missing (a
-            # reviewer manually approving an incomplete candidate) — there's
-            # nothing stable to match on in that case either way.
+            # dedup/link matching queries on, so a future approval of the
+            # same supplier attaches a new version to this record_key
+            # instead of needing a one-off backfill migration. Falls back to
+            # a random key only when CNPJ is missing (a reviewer manually
+            # approving an incomplete candidate) — there's nothing stable to
+            # match on in that case either way.
             record_key=fields.get("cnpj") or str(uuid.uuid4()),
             version=1,
             is_current=True,
@@ -196,7 +299,21 @@ def approve_job(
             master_record.id,
             after_extra={"master_record_id": master_record.id, "fields": fields},
         )
-        session.commit()
+        try:
+            session.commit()
+        except IntegrityError:
+            # A concurrent approve_job/resolve_duplicate for the same
+            # record_key committed in the narrow window between the
+            # existing_match check above and this commit — the unique
+            # index (db.py) is what actually stops two "current" rows for
+            # the same supplier from ever landing, this check just gives a
+            # clean error instead of a raw DB error.
+            session.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail="A matching Supplier record was just registered by another request — retry to "
+                "pick up the resulting duplicate review case",
+            ) from None
 
         return ReviewDecisionResponse(job_id=job.id, status=job.status, master_record_id=master_record.id)
 
@@ -211,6 +328,7 @@ def reject_job(
 
     with get_session() as session:
         job, document = _load_decidable_job(session, job_id)
+        _reject_if_duplicate_pending(session, job)
         old_status = job.status
         if not _claim_decision(session, job, "rejected"):
             raise HTTPException(status_code=409, detail="Job was already decided by another request")
@@ -231,6 +349,7 @@ def request_info(
 
     with get_session() as session:
         job, document = _load_decidable_job(session, job_id)
+        _reject_if_duplicate_pending(session, job)
         old_status = job.status
         if not _claim_decision(session, job, "needs_info"):
             raise HTTPException(status_code=409, detail="Job was already decided by another request")

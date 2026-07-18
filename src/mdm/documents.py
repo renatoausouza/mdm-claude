@@ -11,7 +11,8 @@ from sqlalchemy.exc import IntegrityError
 
 from mdm import config, storage
 from mdm.auth import get_current_user
-from mdm.db import AuditLogEntry, Document, ExtractionJob, User, get_session
+from mdm.db import AuditLogEntry, Document, DuplicateReviewCase, ExtractionJob, User, get_session
+from mdm.duplicates import detect_supplier_duplicate
 from mdm.scoring import ScoringResult
 from mdm.supplier_extraction import SupplierCandidateResult, run_supplier_extraction, score_supplier
 
@@ -28,6 +29,7 @@ class JobResponse(BaseModel):
     content_hash: str
     status: str
     retention_until: datetime.datetime | None
+    duplicate_review_case_id: str | None = None
 
 
 def _compute_retention_until() -> datetime.datetime | None:
@@ -37,13 +39,14 @@ def _compute_retention_until() -> datetime.datetime | None:
     return datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=retention_days)
 
 
-def _to_response(document: Document, job: ExtractionJob) -> JobResponse:
+def _to_response(document: Document, job: ExtractionJob, duplicate_review_case_id: str | None = None) -> JobResponse:
     return JobResponse(
         id=job.id,
         document_id=document.id,
         content_hash=document.content_hash,
         status=job.status,
         retention_until=document.retention_until,
+        duplicate_review_case_id=duplicate_review_case_id,
     )
 
 
@@ -68,6 +71,10 @@ def upload_document(file: UploadFile = File(...), current_user: User = Depends(g
         if existing_document is not None:
             job = session.query(ExtractionJob).filter_by(document_id=existing_document.id).first()
             assert job is not None, "every Document row must have a matching ExtractionJob"
+            existing_duplicate_case = (
+                session.query(DuplicateReviewCase).filter_by(extraction_job_id=job.id, status="pending").first()
+            )
+            existing_duplicate_case_id = existing_duplicate_case.id if existing_duplicate_case is not None else None
             if not storage.document_exists(existing_document.id):
                 if existing_document.purged_at is not None:
                     # The file was intentionally removed by the retention
@@ -88,7 +95,7 @@ def upload_document(file: UploadFile = File(...), current_user: User = Depends(g
                         )
                     )
                     session.commit()
-                    return _to_response(existing_document, job)
+                    return _to_response(existing_document, job, existing_duplicate_case_id)
                 raise HTTPException(
                     status_code=500,
                     detail="Document record exists but its stored file is missing",
@@ -111,7 +118,7 @@ def upload_document(file: UploadFile = File(...), current_user: User = Depends(g
                     )
                 )
                 session.commit()
-            return _to_response(existing_document, job)
+            return _to_response(existing_document, job, existing_duplicate_case_id)
 
         document_id = str(uuid.uuid4())
         document = Document(
@@ -154,6 +161,7 @@ def upload_document(file: UploadFile = File(...), current_user: User = Depends(g
         # burst of slow extractions can starve other sync routes (including
         # GET /jobs/{id}/result polling) — a known, accepted limitation of
         # the synchronous-for-now design, not something this ticket fixes.
+        duplicate_case: DuplicateReviewCase | None = None
         if extension == ".pdf":
             try:
                 result = run_supplier_extraction(content)
@@ -163,6 +171,12 @@ def upload_document(file: UploadFile = File(...), current_user: User = Depends(g
                 # FR-12); the score itself is exposed via GET .../result for
                 # the reviewer, not used to bypass review here.
                 job.status = "pending_review"
+                # Held alongside PendingReview, per the state machine in
+                # solution-brief.md §7 — never blocks scoring/review, only
+                # adds a case for #7's duplicate-resolution path to pick up.
+                duplicate_case = detect_supplier_duplicate(session, job, result)
+                if duplicate_case is not None:
+                    session.add(duplicate_case)
             except Exception:  # document content is untrusted; must not crash the upload request
                 logger.exception("Supplier extraction failed for document %s", document_id)
                 job.status = "extraction_failed"
@@ -185,7 +199,7 @@ def upload_document(file: UploadFile = File(...), current_user: User = Depends(g
         )
         session.commit()
 
-        return _to_response(document, job)
+        return _to_response(document, job, duplicate_case.id if duplicate_case is not None else None)
 
 
 class JobResultResponse(BaseModel):
@@ -195,6 +209,7 @@ class JobResultResponse(BaseModel):
     result: SupplierCandidateResult | None
     error_detail: str | None
     scoring: ScoringResult | None
+    duplicate_review_case_id: str | None = None
 
 
 @router.get("/jobs/{job_id}/result", response_model=JobResultResponse)
@@ -204,6 +219,9 @@ def get_job_result(job_id: str, current_user: User = Depends(get_current_user)) 
         if job is None:
             raise HTTPException(status_code=404, detail="Job not found")
         result = SupplierCandidateResult.model_validate_json(job.result_json) if job.result_json else None
+        duplicate_case = (
+            session.query(DuplicateReviewCase).filter_by(extraction_job_id=job.id, status="pending").first()
+        )
         return JobResultResponse(
             id=job.id,
             document_id=job.document_id,
@@ -211,4 +229,5 @@ def get_job_result(job_id: str, current_user: User = Depends(get_current_user)) 
             result=result,
             error_detail=job.error_detail,
             scoring=score_supplier(result) if result is not None else None,
+            duplicate_review_case_id=duplicate_case.id if duplicate_case is not None else None,
         )
