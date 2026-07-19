@@ -5,7 +5,7 @@ from mdm.regex_candidates import RegexCandidate
 
 _ROLE_LABELS: dict[str, list[str]] = {
     "supplier": ["emitente", "fornecedor"],
-    "client": ["destinatario", "destinatário", "cliente", "comprador"],
+    "client": ["destinatario", "destinatário", "cliente", "comprador", "tomador"],
     "transporter": ["transportador", "transportadora"],
     "intermediary": ["intermediario", "intermediário", "representante"],
     "branch": ["filial"],
@@ -47,6 +47,27 @@ def _find_role_label(context: str, anchor_offset: int) -> tuple[str, str] | None
     return best[1], best[2]
 
 
+def _find_nearest_preceding_role_label(text: str) -> tuple[str, str] | None:
+    """Find the role label closest to the END of `text` — i.e. the label
+    nearest to (but strictly before) whatever position `text` was sliced
+    up to. Used once the same-line check has failed, to walk back through
+    the page (in true reading order, per #14's ordering fix) to the
+    nearest preceding section header, however many lines above it sits —
+    not just the line immediately above."""
+    normalized = text.lower()
+    best: tuple[int, str, str] | None = None  # (position, role, label)
+    for role, labels in _ROLE_LABELS.items():
+        for label in labels:
+            idx = normalized.rfind(label)
+            if idx == -1:
+                continue
+            if best is None or idx > best[0]:
+                best = (idx, role, label)
+    if best is None:
+        return None
+    return best[1], best[2]
+
+
 def _line_bounds(text: str, position: int) -> tuple[int, int]:
     line_start = text.rfind("\n", 0, position) + 1
     line_end = text.find("\n", position)
@@ -65,17 +86,20 @@ def tag_roles(candidates: list[RegexCandidate], pages: list[PdfPage]) -> list[Ta
 
         # Scoped to the same line as the tax ID first (the common case: a
         # label and the ID appear on one line, e.g. "Fornecedor CNPJ: ...").
-        # Falls back to the immediately preceding line (the label sits on
-        # its own line just above the ID) only if nothing is found there —
-        # a fixed-width character window would instead bleed into
-        # neighboring parties' labels on a multi-party document.
+        # Falls back to the nearest preceding role label anywhere earlier
+        # on the page (in true reading order, per #14) only if nothing is
+        # found there — real invoices commonly put a section header
+        # ("Destinatário / Remetente") several lines above the block of
+        # fields it labels, not on the line directly above the value.
+        # Backward-only and "nearest wins" keeps this still label-driven,
+        # not positional: a closer, more relevant header always overrides
+        # a more distant one, and a label appearing *after* the candidate
+        # is never considered.
         line_start, line_end = _line_bounds(page.text, candidate.match_start)
         found = _find_role_label(page.text[line_start:line_end], candidate.match_start - line_start)
 
         if found is None and line_start > 0:
-            prev_line_start, _ = _line_bounds(page.text, line_start - 1)
-            prev_line = page.text[prev_line_start:line_start]
-            found = _find_role_label(prev_line, len(prev_line))
+            found = _find_nearest_preceding_role_label(page.text[:line_start])
 
         if found is None:
             parties.append(TaggedParty(tax_id=candidate, role="unknown", role_evidence=None))

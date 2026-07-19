@@ -30,6 +30,13 @@ def extract_pdf_pages(content: bytes) -> list[PdfPage]:
     # as one glyph) while search_for()'s does not, which silently truncated
     # regex matches spanning a ligature (e.g. "o[ffi]cial@x.com").
     return [
-        PdfPage(page_number=i + 1, text=page.get_text(flags=fitz.TEXTFLAGS_SEARCH), _page=page)
+        # sort=True reorders spans into visual reading order (top-to-bottom,
+        # left-to-right) rather than PDF content-stream draw order. Dense
+        # form-style documents (DANFE/NFS-e invoices) are commonly generated
+        # with fields drawn in an order that doesn't match their printed
+        # layout — without this, "nearby text" heuristics downstream (regex
+        # context, role-tagging) see values and their labels in the wrong
+        # order relative to each other (#14).
+        PdfPage(page_number=i + 1, text=page.get_text(flags=fitz.TEXTFLAGS_SEARCH, sort=True), _page=page)
         for i, page in enumerate(doc)
     ]

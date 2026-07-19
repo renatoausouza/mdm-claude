@@ -33,3 +33,24 @@ def test_page_can_locate_bbox_for_a_substring() -> None:
     bbox = pages[0].find_bbox("12.345.678/0001-99")
     assert bbox is not None
     assert len(bbox) == 4
+
+
+def test_text_is_returned_in_visual_reading_order_not_draw_order() -> None:
+    # Regression test for #14: dense form-style invoices (DANFE/NFS-e) are
+    # generated with fields drawn in an order that doesn't match their
+    # visual layout — PyMuPDF's default get_text() follows draw order, so a
+    # value positioned near the top of the page can come back in the
+    # extracted text *after* a value drawn first but positioned lower. This
+    # breaks any "nearby text" heuristic (role-tagging, regex context)
+    # downstream. Drawing "BOTTOM" first at a lower position, then "TOP" at
+    # a higher position, reproduces that draw-order/visual-order mismatch.
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 300), "BOTTOM TEXT", fontsize=10)
+    page.insert_text((72, 100), "TOP TEXT", fontsize=10)
+    content: bytes = doc.tobytes()
+    doc.close()
+
+    pages = extract_pdf_pages(content)
+
+    assert pages[0].text.index("TOP TEXT") < pages[0].text.index("BOTTOM TEXT")

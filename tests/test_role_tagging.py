@@ -78,6 +78,64 @@ def test_two_parties_on_the_same_line_get_the_closer_label_each() -> None:
     assert parties_by_cnpj["22.222.222/0001-91"] == "client"
 
 
+def test_label_several_lines_above_the_value_is_still_found() -> None:
+    # Regression test for #14: real invoices commonly put a section header
+    # ("Destinatário / Remetente") several lines above the block of fields
+    # it labels, not on the line immediately before the tax ID. The old
+    # "same line or one line up" window missed this; the search must walk
+    # back through the page (in reading order) to the nearest preceding
+    # label, however many lines away.
+    pdf_bytes = _make_pdf(
+        "Destinatario / Remetente\n"
+        "Nome / Razao Social\n"
+        "Endereco\n"
+        "Municipio\n"
+        "CNPJ/CPF: 22.222.222/0001-91"
+    )
+    pages = extract_pdf_pages(pdf_bytes)
+    candidates = find_candidates(pages)
+
+    parties = tag_roles(candidates, pages)
+
+    assert parties[0].role == "client"
+    assert parties[0].role_evidence is not None
+    assert parties[0].role_evidence.matched_label in ("destinatario", "destinatário")
+
+
+def test_tomador_label_is_recognized_as_client_role() -> None:
+    # NFS-e (services invoice) uses "Tomador do(s) Servico(s)" to label the
+    # service recipient, not "Destinatario" — a real label vocabulary gap
+    # found while investigating #14 against a services-invoice layout.
+    pdf_bytes = _make_pdf("Tomador do(s) Servico(s)\nCPF/CNPJ: 111.444.777-35")
+    pages = extract_pdf_pages(pdf_bytes)
+    candidates = find_candidates(pages)
+
+    parties = tag_roles(candidates, pages)
+
+    assert parties[0].role == "client"
+
+
+def test_a_label_appearing_later_in_the_document_is_not_picked_up() -> None:
+    # Regression test for #14: a role-label-shaped word positioned *after*
+    # a tax ID in reading order (e.g. a freight-payer code reading "0 -
+    # Emitente" further down the page) must never be treated as that
+    # earlier tax ID's role evidence. The search only looks backward from
+    # the candidate's own position.
+    pdf_bytes = _make_pdf(
+        "Some unrelated heading\n"
+        "CNPJ: 11.223.344/0001-86\n"
+        "more unrelated text\n"
+        "Frete por conta: 0 - Emitente"
+    )
+    pages = extract_pdf_pages(pdf_bytes)
+    candidates = find_candidates(pages)
+
+    parties = tag_roles(candidates, pages)
+
+    assert parties[0].role == "unknown"
+    assert parties[0].role_evidence is None
+
+
 def test_three_or_more_tax_ids_are_all_retained() -> None:
     pdf_bytes = _make_pdf(
         "Fornecedor CNPJ: 11.111.111/0001-91\n"
