@@ -47,6 +47,38 @@ def test_extracts_product_master_and_transactional_fields() -> None:
     assert result.discount is not None and result.discount.value == "5%"
 
 
+def test_full_text_reaches_the_llm_in_visual_order_not_draw_order() -> None:
+    # Regression test found in code review of #14: run_product_extraction
+    # has no regex/role-tagging pass of its own — it feeds page text
+    # straight to the LLM (single-primary-item extraction, per
+    # llm_extraction.py), so it depends entirely on pdf_extraction.py's
+    # sort=True fix for the LLM to see items in their real, visual order.
+    # On a multi-item invoice whose rows are drawn out of visual order (the
+    # exact layout pattern #14 targets), the wrong item could otherwise be
+    # read as "first" (primary) by the model.
+    prompts: list[str] = []
+
+    class CapturingClient:
+        def generate_json(self, prompt: str) -> str:
+            prompts.append(prompt)
+            return json.dumps({"name": "Parafuso Sextavado M8", "sku": "PSX-M8-001"})
+
+    doc = fitz.open()
+    page = doc.new_page()
+    # Drawn out of visual order: the visually-second item (SKU-002, lower
+    # on the page) is drawn first; the visually-first item (SKU-001,
+    # higher on the page) is drawn second.
+    page.insert_text((72, 300), "Item 2: Porca Sextavada M8, SKU PSX-M8-002", fontsize=10)
+    page.insert_text((72, 100), "Item 1: Parafuso Sextavado M8, SKU PSX-M8-001", fontsize=10)
+    content: bytes = doc.tobytes()
+    doc.close()
+
+    run_product_extraction(content, llm_client=CapturingClient())
+
+    assert len(prompts) == 1
+    assert prompts[0].index("PSX-M8-001") < prompts[0].index("PSX-M8-002")
+
+
 def test_score_product_requires_only_name() -> None:
     result = ProductCandidateResult(name=None, sku=None)
 

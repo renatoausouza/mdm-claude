@@ -11,11 +11,19 @@ class PdfPage:
 
     def find_bbox(self, substring: str, occurrence_index: int = 0) -> tuple[float, float, float, float] | None:
         """Locate the bounding box of the occurrence_index'th occurrence of
-        substring on this page (0 = first), for provenance on a regex
-        match's exact text. A value repeated on a page (e.g. a CNPJ in
-        both a header and footer) needs its own occurrence's bbox, not
-        always the first one's."""
-        matches = self._page.search_for(substring)
+        substring on this page (0 = first, in reading order), for
+        provenance on a regex match's exact text. A value repeated on a
+        page (e.g. a CNPJ in both a header and footer) needs its own
+        occurrence's bbox, not always the first one's.
+
+        occurrence_index is computed by the caller (regex_candidates.py)
+        by counting matches in order through this page's sort=True'd
+        .text — but search_for() has no sort option of its own and
+        returns matches in PDF draw order, which doesn't necessarily match
+        visual/reading order (that's the whole premise of #14). Sorting
+        the results here by position (top-to-bottom, left-to-right) keeps
+        occurrence_index meaning the same thing on both sides."""
+        matches = sorted(self._page.search_for(substring), key=lambda rect: (rect.y0, rect.x0))
         if occurrence_index >= len(matches):
             return None
         rect = matches[occurrence_index]

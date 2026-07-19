@@ -86,3 +86,31 @@ def test_repeated_value_on_one_page_gets_its_own_bbox_each() -> None:
     assert len(candidates) == 2
     assert candidates[0].bbox != candidates[1].bbox
     assert candidates[0].bbox[1] < candidates[1].bbox[1]  # header above footer
+
+
+def test_repeated_value_drawn_out_of_visual_order_still_gets_the_right_bbox_each() -> None:
+    # Regression test for #14 code review: pdf_extraction.py's sort=True
+    # reorders page.text into visual order, but find_bbox() used
+    # search_for() results in their original (unsorted, draw-order) order.
+    # For a value repeated on a page whose draw order doesn't match its
+    # visual order (exactly the DANFE/NFS-e pattern #14 targets), the
+    # occurrence_index computed against the sorted text no longer lines up
+    # with search_for()'s draw-order match list, so the wrong bbox gets
+    # attached to each occurrence. Drawing the visually-lower ("footer")
+    # copy FIRST and the visually-higher ("header") copy SECOND reproduces
+    # the mismatch.
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 400), "Footer CNPJ: 11.223.344/0001-86", fontsize=10)  # drawn first, visually lower
+    page.insert_text((72, 72), "Header CNPJ: 11.223.344/0001-86", fontsize=10)  # drawn second, visually higher
+    pdf_bytes: bytes = doc.tobytes()
+    doc.close()
+
+    pages = extract_pdf_pages(pdf_bytes)
+    candidates = [c for c in find_candidates(pages) if c.kind == "cnpj"]
+
+    assert len(candidates) == 2
+    # candidates are produced in (sorted) text order, so candidates[0] is
+    # the header occurrence (comes first in visual reading order) and must
+    # get the header's (higher, smaller-y) bbox — not the footer's.
+    assert candidates[0].bbox[1] < candidates[1].bbox[1]

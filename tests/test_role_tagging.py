@@ -115,6 +115,56 @@ def test_tomador_label_is_recognized_as_client_role() -> None:
     assert parties[0].role == "client"
 
 
+def test_unlabeled_candidate_after_a_labeled_block_does_not_inherit_its_label() -> None:
+    # Regression test found in code review of #14: the widened backward
+    # search must stop at the nearest earlier OTHER candidate's own line —
+    # otherwise a label that correctly belongs to an earlier, different
+    # party "bleeds" onto a later, unrelated candidate that has no real
+    # label of its own (e.g. an unlabeled reference CNPJ in a "Dados
+    # Adicionais" footer, several sections after a real Transportador
+    # block). That candidate must stay "unknown", not inherit
+    # "transporter" just because "Transportador" is the nearest word.
+    pdf_bytes = _make_pdf(
+        "Fornecedor CNPJ: 11.111.111/0001-91\n"
+        "Destinatario CNPJ: 22.222.222/0001-91\n"
+        "Transportador CNPJ: 33.333.333/0001-91\n"
+        "Dados Adicionais\n"
+        "Nota fiscal referente ao contrato 456.\n"
+        "Contador responsavel: 44.444.444/0001-91"
+    )
+    pages = extract_pdf_pages(pdf_bytes)
+    candidates = find_candidates(pages)
+
+    parties = tag_roles(candidates, pages)
+    parties_by_cnpj = {p.tax_id.value: p.role for p in parties}
+
+    assert parties_by_cnpj["11.111.111/0001-91"] == "supplier"
+    assert parties_by_cnpj["22.222.222/0001-91"] == "client"
+    assert parties_by_cnpj["33.333.333/0001-91"] == "transporter"
+    assert parties_by_cnpj["44.444.444/0001-91"] == "unknown"
+
+
+def test_role_word_inside_unrelated_prose_is_not_matched_as_a_label() -> None:
+    # Regression test found in code review of #14: a role word appearing
+    # incidentally inside ordinary prose (a return-policy disclaimer,
+    # here) — not as its own section-header line — must not be treated as
+    # a real label. The second (repeated) CNPJ has no real label of its
+    # own nearby, so it must correctly land on "unknown" (routes to human
+    # review), not get pulled into "client" just because "comprador"
+    # happens to appear somewhere earlier on the page.
+    pdf_bytes = _make_pdf(
+        "Fornecedor CNPJ: 11.223.344/0001-86\n"
+        "Este cupom nao pode ser trocado, exceto pelo comprador original.\n"
+        "Via: 11.223.344/0001-86"
+    )
+    pages = extract_pdf_pages(pdf_bytes)
+    candidates = find_candidates(pages)
+
+    parties = tag_roles(candidates, pages)
+
+    assert [p.role for p in parties] == ["supplier", "unknown"]
+
+
 def test_a_label_appearing_later_in_the_document_is_not_picked_up() -> None:
     # Regression test for #14: a role-label-shaped word positioned *after*
     # a tax ID in reading order (e.g. a freight-payer code reading "0 -
