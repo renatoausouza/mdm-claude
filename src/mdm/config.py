@@ -35,6 +35,16 @@ def get_ollama_extraction_model() -> str:
     return os.environ.get("OLLAMA_EXTRACTION_MODEL", "llama3")
 
 
+def get_ollama_extraction_timeout_seconds() -> float:
+    # deploy/nginx-mdm.conf grants POST /documents up to 300s specifically
+    # because CPU-only local inference on the target VM was observed
+    # running 50-90s even on ordinary documents — a longer/denser real
+    # document (a full DANFE's text) can legitimately take longer still.
+    # Default leaves nginx's budget usable rather than the extraction call
+    # giving up well before nginx would have.
+    return float(os.environ.get("MDM_OLLAMA_EXTRACTION_TIMEOUT_SECONDS", "280"))
+
+
 def get_data_dir() -> str:
     return os.environ.get("MDM_DATA_DIR", "data")
 

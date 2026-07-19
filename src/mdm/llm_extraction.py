@@ -32,7 +32,7 @@ class OllamaExtractionClient:
                 "format": "json",
                 "options": {"temperature": 0.1},
             },
-            timeout=120.0,
+            timeout=config.get_ollama_extraction_timeout_seconds(),
         )
         response.raise_for_status()
         result: str = response.json()["response"]
