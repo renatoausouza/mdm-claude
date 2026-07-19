@@ -223,6 +223,52 @@ label {
   color: var(--color-success);
 }
 
+/* ---- progress ---- */
+
+.progress-bar {
+  margin-top: 0.75rem;
+}
+
+.progress-bar-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+
+.progress-bar-indeterminate {
+  height: 100%;
+  width: 40%;
+  border-radius: 999px;
+  background: var(--color-primary);
+  animation: progress-bar-slide 1.2s ease-in-out infinite;
+}
+
+.progress-bar-label {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+@keyframes progress-bar-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(150%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-bar-indeterminate {
+    animation: none;
+    width: 100%;
+  }
+}
+
 /* ---- status badges ---- */
 
 .status-badge {

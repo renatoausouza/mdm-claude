@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import * as api from '../api/endpoints'
 import { ErrorBanner } from '../components/ErrorBanner'
+import { ProgressBar } from '../components/ProgressBar'
 import type { Domain, JobResponse } from '../types/api'
 import { DOMAIN_LABELS, DOMAINS } from '../types/api'
 import { humanize } from '../utils'
@@ -52,6 +53,7 @@ export function UploadPage() {
         <button type="submit" disabled={submitting || !file}>
           {submitting ? 'Uploading and extracting…' : 'Upload'}
         </button>
+        {submitting && <ProgressBar label="Extracting document — this can take up to a minute…" />}
       </form>
 
       {result && (
