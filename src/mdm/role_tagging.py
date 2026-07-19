@@ -23,10 +23,18 @@ _LABEL_PATTERNS: list[tuple[str, str, re.Pattern[str]]] = [
 ]
 
 
+_POSITIONAL_SUPPLIER_LABEL = "(inferred: topmost unlabeled party, no label found)"
+
+
 @dataclass
 class RoleEvidence:
     matched_label: str
     location: str  # e.g. "page 1, nearby text"
+    # True only for the #16 positional fallback below — never set by a real
+    # label match. Callers (and the frontend) must be able to tell "the
+    # system found a real label" apart from "the system guessed based on
+    # position" without inspecting matched_label's text (D3, amended).
+    inferred: bool = False
 
 
 @dataclass
@@ -137,4 +145,32 @@ def tag_roles(candidates: list[RegexCandidate], pages: list[PdfPage]) -> list[Ta
             role, label = found
             evidence = RoleEvidence(matched_label=label, location=f"page {candidate.page_number}, nearby text")
             parties.append(TaggedParty(tax_id=candidate, role=role, role_evidence=evidence))
+
+    # Positional fallback (#16, amends D3): when a page has NO label-based
+    # supplier match at all, the topmost unlabeled candidate on that page
+    # defaults to supplier — the common real-world case of a masthead-only
+    # issuer, identified only by being the first thing on the page, with no
+    # "Emitente"/"Fornecedor" label printed anywhere (confirmed against
+    # real invoices). Deliberately last-resort: skipped entirely on any
+    # page that already has a real labeled supplier, never touches more
+    # than one candidate, and always marked role_evidence.inferred=True so
+    # this is never mistakable for an actual matched label.
+    parties_by_page: dict[int, list[TaggedParty]] = {}
+    for party in parties:
+        parties_by_page.setdefault(party.tax_id.page_number, []).append(party)
+
+    for page_number, page_parties in parties_by_page.items():
+        if any(p.role == "supplier" for p in page_parties):
+            continue
+        unlabeled = [p for p in page_parties if p.role == "unknown"]
+        if not unlabeled:
+            continue
+        topmost = min(unlabeled, key=lambda p: p.tax_id.match_start)
+        topmost.role = "supplier"
+        topmost.role_evidence = RoleEvidence(
+            matched_label=_POSITIONAL_SUPPLIER_LABEL,
+            location=f"page {page_number}, positional fallback",
+            inferred=True,
+        )
+
     return parties

@@ -31,6 +31,11 @@ class RoleEvidenceInfo(BaseModel):
 
     matched_label: str
     location: str
+    # True only for #16's positional fallback (masthead-only issuer, no
+    # label found anywhere) — never set by a real label match. Lets
+    # consumers (the frontend) distinguish "found a real label" from
+    # "guessed based on position" without parsing matched_label's text.
+    inferred: bool = False
 
 
 class PartyInfo(BaseModel):

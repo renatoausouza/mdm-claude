@@ -62,20 +62,37 @@ def test_product_nfe_client_tagged_despite_distant_label_and_draw_order() -> Non
     assert len(client_parties) == 1
 
 
-def test_product_nfe_masthead_issuer_stays_unknown_not_misattached_to_decoy() -> None:
-    # The masthead CNPJ has no preceding label at all (it's the first thing
-    # on the page) — per #14's revised scope this correctly stays unknown
-    # rather than being guessed from position. The "0 - Emitente" freight
-    # decoy sits *after* the masthead CNPJ in reading order and must not
-    # retroactively attach to it.
-    fake = FakeLlmClient({"legal_name": None, "email": None, "telephone": None, "address": None})
+def test_product_nfe_masthead_issuer_gets_positional_supplier_not_the_decoy() -> None:
+    # #16 (amends D3): the masthead CNPJ has no preceding label at all
+    # (it's the first thing on the page), so it now gets the positional
+    # supplier fallback — clearly marked as inferred, not evidenced. The
+    # "0 - Emitente" freight decoy sits *after* the masthead CNPJ in
+    # reading order and must not be the thing that gets matched (if it
+    # were, role_evidence.inferred would be False and matched_label would
+    # read "emitente" instead of the positional-fallback marker).
+    prompts: list[str] = []
 
-    result = run_supplier_extraction(_product_nfe_with_transporter_block(), llm_client=fake)
+    class CapturingClient:
+        def generate_json(self, prompt: str) -> str:
+            prompts.append(prompt)
+            return json.dumps({"legal_name": "Aurora Comercio de Eletronicos Ltda", "email": None, "telephone": None, "address": None})
 
-    assert result.cnpj is None
+    result = run_supplier_extraction(_product_nfe_with_transporter_block(), llm_client=CapturingClient())
+
+    assert result.cnpj is not None
+    assert result.cnpj.value == "11.223.344/0001-86"
     masthead_party = next(p for p in result.parties if p.tax_id.value == "11.223.344/0001-86")
-    assert masthead_party.role == "unknown"
-    assert masthead_party.role_evidence is None
+    assert masthead_party.role == "supplier"
+    assert masthead_party.role_evidence is not None
+    assert masthead_party.role_evidence.inferred is True
+
+    # The CNPJ anchor now reaches the LLM prompt (previously None, so the
+    # legal_name lookup had nothing to disambiguate the right party) —
+    # this is what actually fixes legal_name extraction for this shape.
+    assert len(prompts) == 1
+    assert "11.223.344/0001-86" in prompts[0]
+    assert result.legal_name is not None
+    assert result.legal_name.value == "Aurora Comercio de Eletronicos Ltda"
 
 
 def _product_return_nfe() -> bytes:
@@ -106,7 +123,7 @@ def test_product_return_nfe_client_and_transporter_both_correctly_tagged() -> No
     assert result.tax_id.value == "22.222.222/0001-91"
     roles = {p.tax_id.value: p.role for p in result.parties}
     assert roles["11.111.111/0001-91"] == "transporter"
-    assert roles["33.333.333/0001-91"] == "unknown"  # masthead, unlabeled
+    assert roles["33.333.333/0001-91"] == "supplier"  # masthead, positional fallback (#16)
 
 
 def _nfse_services_invoice() -> bytes:
@@ -130,4 +147,4 @@ def test_nfse_tomador_label_tagged_as_client_despite_draw_order() -> None:
     assert result.tax_id is not None
     assert result.tax_id.value == "111.444.777-35"
     roles = {p.tax_id.value: p.role for p in result.parties}
-    assert roles["11.223.344/0001-86"] == "unknown"  # masthead issuer, unlabeled
+    assert roles["11.223.344/0001-86"] == "supplier"  # masthead issuer, positional fallback (#16)

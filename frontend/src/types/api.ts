@@ -57,6 +57,11 @@ export interface FieldValue {
 export interface RoleEvidenceInfo {
   matched_label: string
   location: string
+  // True only when the role was guessed from the party's position on the
+  // page (masthead, no label found anywhere) rather than matched from a
+  // real label — must be shown distinctly, never presented as if it were
+  // an evidenced match.
+  inferred: boolean
 }
 
 export interface PartyInfo {

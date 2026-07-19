@@ -189,7 +189,12 @@ export function ReviewDetailPage() {
             {(result.parties as PartyInfo[]).map((party, index) => (
               <li key={index}>
                 <strong>{party.role}</strong>: {party.tax_id.value}
-                {party.role_evidence && ` (matched "${party.role_evidence.matched_label}")`}
+                {party.role_evidence?.inferred && (
+                  <span className="role-evidence-inferred" title="Guessed from document position — no label was found; double-check this one">
+                    {' '}(inferred from position, not a matched label — please verify)
+                  </span>
+                )}
+                {party.role_evidence && !party.role_evidence.inferred && ` (matched "${party.role_evidence.matched_label}")`}
               </li>
             ))}
           </ul>

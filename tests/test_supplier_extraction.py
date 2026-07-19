@@ -79,12 +79,19 @@ def test_a_cpf_tagged_supplier_does_not_populate_the_cnpj_field() -> None:
     assert result.parties[0].tax_id.value == "111.444.777-35"
 
 
-def test_no_role_labels_means_cnpj_is_none_and_party_is_unknown() -> None:
+def test_no_role_labels_falls_back_to_positional_supplier() -> None:
+    # Superseded by #16 (amends D3): the only tax ID on the page, with no
+    # label anywhere, is the "topmost unlabeled candidate" by definition —
+    # it now populates cnpj via the positional fallback, clearly marked as
+    # inferred rather than evidenced.
     pdf_bytes = _make_pdf("Random text 11.223.344/0001-86 more text")
     fake = FakeClient({"legal_name": None, "email": None, "telephone": None, "address": None})
 
     result = run_supplier_extraction(pdf_bytes, llm_client=fake)
 
-    assert result.cnpj is None
+    assert result.cnpj is not None
+    assert result.cnpj.value == "11.223.344/0001-86"
     assert len(result.parties) == 1
-    assert result.parties[0].role == "unknown"
+    assert result.parties[0].role == "supplier"
+    assert result.parties[0].role_evidence is not None
+    assert result.parties[0].role_evidence.inferred is True

@@ -64,7 +64,7 @@ Business documents (invoices, purchase orders, correspondence, attachments) arri
 | FR-02 | System shall compute a content hash (SHA-256) at ingestion and short-circuit reprocessing of an already-seen hash, linking to the existing job. | D17 |
 | FR-03 | System shall run a hybrid regex-candidate + local-LLM extraction pass producing structured candidate fields for Supplier, Client, and Product domains. | Brief §3–4 |
 | FR-04 | Every extracted field shall carry a confidence score and a provenance record (page/bounding box/matched snippet/source header as applicable). | D16 |
-| FR-05 | Tax-ID candidates (CNPJ/CPF) shall be assigned a role (supplier/client/transporter/intermediary/branch/unknown) based solely on contextual labels near the value; no positional ("first/second") fallback. | D3 |
+| FR-05 | Tax-ID candidates (CNPJ/CPF) shall be assigned a role (supplier/client/transporter/intermediary/branch/unknown) based solely on contextual labels near the value; no positional ("first/second") fallback. **Amended (ticket #16, post-MVP):** when a page has no label-based supplier match at all, the topmost unlabeled tax-ID candidate defaults to role=supplier — a narrow, last-resort positional exception for the common real-world case of a masthead-only issuer (no "Emitente"/"Fornecedor" label printed anywhere), made deliberately after confirming against real invoices that the strict label-only rule routed most real suppliers to manual review. This exception must never be indistinguishable from a real label match: its evidence is marked as inferred, not evidenced, so a reviewer can tell the difference. | D3 (amended) |
 | FR-06 | Any tax-ID candidate with role = unknown shall be routed to human review before any registration or duplicate-matching step. | D3 |
 | FR-07 | System shall compute completeness and compliance scores per §10 below, and derive a reliability tier that is hard-capped at "Low" if any field required-for-registration is missing. | D15 |
 | FR-08 | System shall compute a per-field confidence gate: any field below the confidence threshold forces human review regardless of the reliability tier. | D16 |
@@ -164,7 +164,7 @@ Every field, on every candidate, is a structured object, not a bare value (D16):
 - **Product**: deterministic exact match on SKU only. No SKU present → always unlinked, human-searched (D11). No NCM+name fallback (NCM is a shared tax-classification code, too weak a key — rejected explicitly).
 - **On any match**: link + flag for human review, side-by-side diff, human accepts/rejects/partially-accepts fields. No auto-merge, no auto-overwrite, ever (D4).
 - **Golden-record survivorship, source-precedence, merge/unmerge**: explicitly out of scope for MVP (D2). Do not build this speculatively.
-- **Entity role assignment** (which party is supplier vs. client vs. other): strictly label-driven from contextual text, never positional (D3). Unknown-role tax IDs always route to review.
+- **Entity role assignment** (which party is supplier vs. client vs. other): label-driven from contextual text first (D3); **amended by ticket #16** to fall back to a narrow positional default (topmost unlabeled candidate → supplier) only when no label-based supplier match exists anywhere on the page — evidence for this case is explicitly marked "inferred from position," never presented as a matched label. Unknown-role tax IDs (still the outcome whenever neither a label nor this narrow fallback applies) always route to review.
 
 ---
 

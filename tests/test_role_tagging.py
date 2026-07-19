@@ -50,15 +50,20 @@ def test_tags_client_role_from_a_cpf_not_just_cnpj() -> None:
     assert cpf_parties[0].role == "client"
 
 
-def test_tax_id_with_no_nearby_label_is_unknown() -> None:
+def test_tax_id_with_no_nearby_label_falls_back_to_positional_supplier() -> None:
+    # Superseded by #16 (amends D3): a single tax ID with no label anywhere
+    # on the page is now the "topmost unlabeled candidate" by definition,
+    # so it gets the positional supplier default rather than staying
+    # unknown — but must be clearly marked as inferred, not evidenced.
     pdf_bytes = _make_pdf("Some random document text 11.223.344/0001-86 more text")
     pages = extract_pdf_pages(pdf_bytes)
     candidates = find_candidates(pages)
 
     parties = tag_roles(candidates, pages)
 
-    assert parties[0].role == "unknown"
-    assert parties[0].role_evidence is None
+    assert parties[0].role == "supplier"
+    assert parties[0].role_evidence is not None
+    assert parties[0].role_evidence.inferred is True
 
 
 def test_two_parties_on_the_same_line_get_the_closer_label_each() -> None:
@@ -170,7 +175,10 @@ def test_a_label_appearing_later_in_the_document_is_not_picked_up() -> None:
     # a tax ID in reading order (e.g. a freight-payer code reading "0 -
     # Emitente" further down the page) must never be treated as that
     # earlier tax ID's role evidence. The search only looks backward from
-    # the candidate's own position.
+    # the candidate's own position. Since #16, the candidate still ends up
+    # "supplier" via the positional fallback (it's the only/topmost
+    # candidate) — the important assertion is that this is clearly
+    # inferred, not a real match on the decoy "Emitente" text.
     pdf_bytes = _make_pdf(
         "Some unrelated heading\n"
         "CNPJ: 11.223.344/0001-86\n"
@@ -182,8 +190,9 @@ def test_a_label_appearing_later_in_the_document_is_not_picked_up() -> None:
 
     parties = tag_roles(candidates, pages)
 
-    assert parties[0].role == "unknown"
-    assert parties[0].role_evidence is None
+    assert parties[0].role == "supplier"
+    assert parties[0].role_evidence is not None
+    assert parties[0].role_evidence.inferred is True
 
 
 def test_three_or_more_tax_ids_are_all_retained() -> None:
@@ -201,3 +210,64 @@ def test_three_or_more_tax_ids_are_all_retained() -> None:
     assert len(cnpj_parties) == 3
     roles = {p.role for p in cnpj_parties}
     assert roles == {"supplier", "client", "transporter"}
+
+
+def test_masthead_only_cnpj_with_no_label_anywhere_defaults_to_supplier() -> None:
+    # #16 (amends D3): a masthead-only issuer, identified only by being the
+    # first thing on the page with no "Emitente"/"Fornecedor" label
+    # anywhere (the real, common DANFE/NFS-e shape) must default to
+    # role=supplier as a last resort — but the evidence must clearly show
+    # this was inferred from position, not a real matched label.
+    pdf_bytes = _make_pdf("AURORA COMERCIO LTDA\nCNPJ 11.223.344/0001-86")
+    pages = extract_pdf_pages(pdf_bytes)
+    candidates = find_candidates(pages)
+
+    parties = tag_roles(candidates, pages)
+
+    assert len(parties) == 1
+    assert parties[0].role == "supplier"
+    assert parties[0].role_evidence is not None
+    assert parties[0].role_evidence.inferred is True
+    assert parties[0].role_evidence.matched_label not in ("emitente", "fornecedor")
+
+
+def test_positional_fallback_never_overrides_a_real_label() -> None:
+    # If a page already has a real, label-based supplier match, the
+    # positional fallback must not fire at all — even if there's also an
+    # unlabeled tax ID elsewhere on the page.
+    pdf_bytes = _make_pdf(
+        "Fornecedor CNPJ: 11.111.111/0001-91\n"
+        "Unrelated reference number: 22.222.222/0001-91"
+    )
+    pages = extract_pdf_pages(pdf_bytes)
+    candidates = find_candidates(pages)
+
+    parties = tag_roles(candidates, pages)
+    parties_by_cnpj = {p.tax_id.value: p for p in parties}
+
+    supplier_party = parties_by_cnpj["11.111.111/0001-91"]
+    assert supplier_party.role == "supplier"
+    assert supplier_party.role_evidence is not None
+    assert supplier_party.role_evidence.inferred is False
+
+    other_party = parties_by_cnpj["22.222.222/0001-91"]
+    assert other_party.role == "unknown"
+
+
+def test_positional_fallback_only_applies_to_the_topmost_unlabeled_candidate() -> None:
+    # With multiple unlabeled tax IDs and no real supplier label anywhere,
+    # only the very first (topmost) one becomes the positional supplier —
+    # the rest must stay unknown, not all become "supplier".
+    pdf_bytes = _make_pdf(
+        "AURORA COMERCIO LTDA\n"
+        "CNPJ 11.223.344/0001-86\n"
+        "Unrelated reference: 22.222.222/0001-91"
+    )
+    pages = extract_pdf_pages(pdf_bytes)
+    candidates = find_candidates(pages)
+
+    parties = tag_roles(candidates, pages)
+    parties_by_cnpj = {p.tax_id.value: p.role for p in parties}
+
+    assert parties_by_cnpj["11.223.344/0001-86"] == "supplier"
+    assert parties_by_cnpj["22.222.222/0001-91"] == "unknown"
