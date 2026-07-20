@@ -4,7 +4,11 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <!-- Self-hosted, not Google Fonts CDN — this app is offline-first by
+         design (see docs/solution-brief.md NFR-07); the page must never
+         make an external network call at runtime. -->
+    <link rel="stylesheet" href="/fonts/fonts.css" />
+    <title>MDM — Master Data Registry</title>
   </head>
   <body>
     <div id="root"></div>

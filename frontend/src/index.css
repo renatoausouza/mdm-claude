@@ -1,31 +1,61 @@
+/* ==========================================================================
+   MDM — Master Data Registry
+   Design concept: a registrar's desk. Extracted values are candidate
+   evidence; a human reviewer verifies them against the source document and
+   stamps a decision. Typography and the status "stamp" motif exist to make
+   that verification act legible, not to decorate it.
+   ========================================================================== */
+
 :root {
   color-scheme: light dark;
-  --color-bg: #f7f7f9;
-  --color-surface: #ffffff;
-  --color-border: #d9dce1;
-  --color-text: #1b1f24;
-  --color-text-muted: #5c6470;
-  --color-primary: #2563eb;
-  --color-primary-text: #ffffff;
-  --color-danger: #b42318;
-  --color-danger-bg: #fef2f1;
-  --color-success: #067647;
-  --color-success-bg: #ecfdf3;
-  --color-warning-bg: #fffaeb;
-  --color-warning-text: #93700c;
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* ---- ink / paper (base) ---- */
+  --ink: #1e2a28;
+  --ink-muted: #5c675e;
+  --paper: #eceee3;
+  --surface: #f7f8f1;
+  --rule: #cbcfc0;
+
+  /* ---- interactive ---- */
+  --clerk: #2c4b5c;
+  --clerk-strong: #1e3644;
+  --clerk-text: #f7f8f1;
+
+  /* ---- stamp inks (signature status colors) ---- */
+  --stamp-red: #a23b2e;
+  --stamp-red-bg: #f2e2dd;
+  --ledger-green: #3f6657;
+  --ledger-green-bg: #e2ece5;
+  --flag-ochre: #8a5f19;
+  --flag-ochre-bg: #f3e8d2;
+
+  --focus-ring: #2c4b5c;
+
+  --font-display: 'Roboto Slab', Georgia, 'Times New Roman', serif;
+  --font-body: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-bg: #14161a;
-    --color-surface: #1c1f24;
-    --color-border: #2c3038;
-    --color-text: #e8eaed;
-    --color-text-muted: #9aa1ab;
-    --color-danger-bg: #2b1615;
-    --color-success-bg: #0f2419;
-    --color-warning-bg: #2a2410;
+    --ink: #e6e9de;
+    --ink-muted: #9aa397;
+    --paper: #171c18;
+    --surface: #1f251f;
+    --rule: #333c31;
+
+    --clerk: #8db0c4;
+    --clerk-strong: #a9c6d6;
+    --clerk-text: #0f1512;
+
+    --stamp-red: #e0917f;
+    --stamp-red-bg: #3a231e;
+    --ledger-green: #8fc2ac;
+    --ledger-green-bg: #1f3229;
+    --flag-ochre: #e2b567;
+    --flag-ochre-bg: #3a2e15;
+
+    --focus-ring: #8db0c4;
   }
 }
 
@@ -33,134 +63,363 @@
   box-sizing: border-box;
 }
 
+html {
+  font-family: var(--font-body);
+}
+
 body {
   margin: 0;
-  background: var(--color-bg);
-  color: var(--color-text);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
 }
 
 h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  color: var(--ink);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+h1 {
+  font-size: 1.65rem;
+  font-weight: 700;
+  margin: 0 0 0.4rem;
+}
+
 h2 {
-  color: var(--color-text);
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0 0 0.75rem;
+}
+
+p {
+  color: var(--ink);
 }
 
 a {
-  color: var(--color-primary);
+  color: var(--clerk);
+}
+
+code,
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 button {
   font: inherit;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text);
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  border: 1.5px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  padding: 0.5rem 1.1rem;
+  border-radius: 3px;
   cursor: pointer;
+  transition: transform 0.06s ease;
 }
 
 button:hover:not(:disabled) {
-  border-color: var(--color-primary);
+  background: var(--surface);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--clerk);
+  border-color: var(--clerk);
+  color: var(--clerk-text);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--clerk-strong);
+  border-color: var(--clerk-strong);
+}
+
+.btn-danger {
+  border-color: var(--stamp-red);
+  color: var(--stamp-red);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--stamp-red-bg);
+}
+
+/* The one physical gesture in this system: pressing a decisive verdict
+   (Approve / Accept all) reads like bringing a stamp down. Reserved for
+   the single button per screen that actually finalizes a record. */
+.btn-stamp:active:not(:disabled) {
+  transform: translateY(1px) scale(0.97) rotate(-0.6deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-stamp:active:not(:disabled) {
+    transform: none;
+  }
 }
 
 input,
 select,
 textarea {
   font: inherit;
-  padding: 0.5rem;
-  border-radius: 6px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text);
+  font-family: var(--font-body);
+  padding: 0.55rem 0.65rem;
+  border-radius: 3px;
+  border: 1.5px solid var(--rule);
+  background: var(--surface);
+  color: var(--ink);
   width: 100%;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--clerk);
 }
 
 label {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  margin-bottom: 0.75rem;
+  gap: 0.3rem;
+  margin-bottom: 0.85rem;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
 }
 
 .field-hint {
   font-weight: 400;
-  color: var(--color-text-muted);
+  color: var(--ink-muted);
   font-size: 0.85rem;
 }
 
-/* ---- layout ---- */
+/* ==========================================================================
+   Shell — the registry index (sidebar) + content
+   ========================================================================== */
 
 .app-shell {
   min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 232px 1fr;
 }
 
-.app-header {
+.app-rail {
   display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  padding: 0.75rem 1.5rem;
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  flex-direction: column;
+  background: var(--surface);
+  border-right: 1.5px solid var(--rule);
+  padding: 1.25rem 1rem;
+  gap: 1.75rem;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
 }
 
 .app-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.app-seal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1.5px solid var(--stamp-red);
+  box-shadow: inset 0 0 0 2px var(--paper), inset 0 0 0 3px var(--stamp-red);
+  color: var(--stamp-red);
+  font-family: var(--font-display);
   font-weight: 700;
-  font-size: 1.1rem;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.app-brand-text {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--ink);
+  line-height: 1.15;
+}
+
+.app-brand-caption {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
 }
 
 .app-nav {
   display: flex;
-  gap: 1rem;
+  flex-direction: column;
+  gap: 0.15rem;
   flex: 1;
-  flex-wrap: wrap;
 }
 
-.app-nav a {
+.app-nav-section {
+  margin: 1rem 0 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.app-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
   text-decoration: none;
-  color: var(--color-text-muted);
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: 0.4rem 0.5rem;
+  border-radius: 3px;
+  border-left: 3px solid transparent;
 }
 
-.app-nav a.active {
-  color: var(--color-primary);
+.app-nav-link:hover {
+  background: var(--paper);
+}
+
+.app-nav-link.active {
+  border-left-color: var(--stamp-red);
+  background: var(--paper);
   font-weight: 600;
 }
 
-.app-user {
-  display: flex;
+.domain-mark {
+  display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.25px solid var(--ink-muted);
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.app-nav-link.active .domain-mark {
+  border-color: var(--stamp-red);
+  color: var(--stamp-red);
+}
+
+.app-user {
+  border-top: 1.5px solid var(--rule);
+  padding-top: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.app-username {
+  font-weight: 600;
+  font-size: 0.88rem;
 }
 
 .app-role {
-  color: var(--color-text-muted);
-  font-size: 0.85rem;
+  color: var(--ink-muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.6rem;
+}
+
+.app-logout {
+  align-self: flex-start;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.82rem;
 }
 
 .app-content {
-  flex: 1;
-  max-width: 960px;
   width: 100%;
+  max-width: 880px;
   margin: 0 auto;
-  padding: 1.5rem;
+  padding: 2.25rem 2rem 4rem;
 }
 
-/* ---- forms ---- */
+@media (max-width: 760px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .app-rail {
+    position: static;
+    height: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .app-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    flex: none;
+    width: 100%;
+  }
+
+  .app-nav-section {
+    width: 100%;
+    margin: 0.5rem 0 0.1rem;
+  }
+
+  .app-user {
+    border-top: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.6rem;
+    margin-left: auto;
+  }
+
+  .app-role {
+    margin-bottom: 0;
+  }
+
+  .app-content {
+    padding: 1.5rem 1.25rem 3rem;
+  }
+}
+
+/* ==========================================================================
+   Forms
+   ========================================================================== */
 
 .centered-form {
-  max-width: 420px;
-  margin: 3rem auto;
-  padding: 2rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
+  max-width: 400px;
+  margin: 3.5rem auto;
+  padding: 2rem 2.25rem;
+  background: var(--surface);
+  border: 1.5px solid var(--rule);
+  border-radius: 4px;
 }
 
 .upload-form {
@@ -168,17 +427,17 @@ label {
 }
 
 .upload-result {
-  margin-top: 1.5rem;
-  padding: 1rem;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-surface);
+  margin-top: 1.75rem;
+  padding: 1.25rem;
+  border: 1.5px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
 }
 
 .upload-result-actions {
   display: flex;
   gap: 0.5rem;
-  margin-top: 0.75rem;
+  margin-top: 1rem;
 }
 
 .home-links {
@@ -193,46 +452,54 @@ label {
   justify-content: center;
   padding: 1rem;
   background: #fff;
-  border-radius: 8px;
+  border-radius: 4px;
   margin: 1rem 0;
 }
 
-/* ---- banners ---- */
+/* ==========================================================================
+   Banners
+   ========================================================================== */
 
 .error-banner,
 .banner {
-  padding: 0.75rem 1rem;
-  border-radius: 6px;
+  padding: 0.7rem 0.9rem;
+  border-radius: 3px;
   margin: 0.75rem 0;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
+  border-left: 3px solid transparent;
 }
 
 .error-banner,
 .banner-error {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
+  background: var(--stamp-red-bg);
+  color: var(--stamp-red);
+  border-left-color: var(--stamp-red);
 }
 
 .banner-info {
-  background: var(--color-warning-bg);
-  color: var(--color-warning-text);
+  background: var(--flag-ochre-bg);
+  color: var(--flag-ochre);
+  border-left-color: var(--flag-ochre);
 }
 
 .banner-success {
-  background: var(--color-success-bg);
-  color: var(--color-success);
+  background: var(--ledger-green-bg);
+  color: var(--ledger-green);
+  border-left-color: var(--ledger-green);
 }
 
-/* ---- progress ---- */
+/* ==========================================================================
+   Progress
+   ========================================================================== */
 
 .progress-bar {
   margin-top: 0.75rem;
 }
 
 .progress-bar-track {
-  height: 6px;
+  height: 4px;
   border-radius: 999px;
-  background: var(--color-border);
+  background: var(--rule);
   overflow: hidden;
 }
 
@@ -240,14 +507,14 @@ label {
   height: 100%;
   width: 40%;
   border-radius: 999px;
-  background: var(--color-primary);
+  background: var(--clerk);
   animation: progress-bar-slide 1.2s ease-in-out infinite;
 }
 
 .progress-bar-label {
   margin: 0.4rem 0 0;
   font-size: 0.85rem;
-  color: var(--color-text-muted);
+  color: var(--ink-muted);
 }
 
 @keyframes progress-bar-slide {
@@ -269,45 +536,75 @@ label {
   }
 }
 
-/* ---- status badges ---- */
+/* ==========================================================================
+   Status stamps — the signature element. A verdict rendered as an ink
+   stamp, not a pill: double ring, letterpress spacing, a settled tilt.
+   ========================================================================== */
 
 .status-badge {
-  display: inline-block;
-  padding: 0.15rem 0.6rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: capitalize;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem 0.55rem;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  border: 1.25px solid currentColor;
+  box-shadow: inset 0 0 0 2px var(--paper);
+  transform: rotate(-1.2deg);
+  animation: stamp-impact 0.18s ease-out;
+}
+
+@keyframes stamp-impact {
+  0% {
+    transform: rotate(-1.2deg) scale(1.35);
+    opacity: 0;
+  }
+  100% {
+    transform: rotate(-1.2deg) scale(1);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-badge {
+    animation: none;
+  }
 }
 
 .status-pending {
-  background: var(--color-warning-bg);
-  color: var(--color-warning-text);
+  background: var(--flag-ochre-bg);
+  color: var(--flag-ochre);
 }
 
 .status-approved {
-  background: var(--color-success-bg);
-  color: var(--color-success);
+  background: var(--ledger-green-bg);
+  color: var(--ledger-green);
+  transform: rotate(1deg);
 }
 
 .status-rejected {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
+  background: var(--stamp-red-bg);
+  color: var(--stamp-red);
 }
 
 .status-neutral {
-  background: var(--color-border);
-  color: var(--color-text-muted);
+  background: transparent;
+  color: var(--ink-muted);
 }
 
-/* ---- field display ---- */
+/* ==========================================================================
+   Field display — the case file
+   ========================================================================== */
 
 .candidate-fields {
   margin: 1.5rem 0;
-  padding: 1rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
+  padding: 1.1rem 1.25rem;
+  background: var(--surface);
+  border: 1.5px solid var(--rule);
+  border-radius: 4px;
 }
 
 .candidate-fields-header {
@@ -317,17 +614,17 @@ label {
 }
 
 .candidate-fields-evidence {
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
 .role-evidence-inferred {
-  color: var(--color-warning-text);
+  color: var(--flag-ochre);
   font-style: italic;
 }
 
 .field-display {
-  padding: 0.5rem 0;
-  border-bottom: 1px solid var(--color-border);
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--rule);
 }
 
 .field-display:last-child {
@@ -335,90 +632,101 @@ label {
 }
 
 .field-display-low-confidence {
-  background: var(--color-warning-bg);
-  border-radius: 4px;
-  padding-left: 0.5rem;
-  margin: 0.25rem 0;
+  background: var(--flag-ochre-bg);
+  border-radius: 3px;
+  padding-left: 0.6rem;
+  margin: 0.3rem 0;
 }
 
 .field-label {
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-  text-transform: capitalize;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .field-required {
-  color: var(--color-danger);
+  color: var(--stamp-red);
 }
 
 .field-value {
-  font-size: 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  margin-top: 0.1rem;
 }
 
 .field-value-empty {
-  color: var(--color-text-muted);
+  font-family: var(--font-body);
+  color: var(--ink-muted);
   font-style: italic;
 }
 
 .field-meta {
   display: flex;
   gap: 0.75rem;
-  margin-top: 0.15rem;
+  margin-top: 0.25rem;
 }
 
 .confidence-badge,
 .provenance-badge {
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--ink-muted);
 }
 
 .confidence-low {
-  color: var(--color-warning-text);
+  color: var(--flag-ochre);
   font-weight: 600;
 }
 
-/* ---- scoring ---- */
+/* ==========================================================================
+   Scoring
+   ========================================================================== */
 
 .scoring-summary {
   margin: 1rem 0;
-  padding: 1rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  background: var(--surface);
+  border: 1.5px solid var(--rule);
+  border-radius: 4px;
 }
 
 .scoring-warning {
-  color: var(--color-warning-text);
-  font-size: 0.9rem;
+  color: var(--flag-ochre);
+  font-size: 0.88rem;
 }
 
-/* ---- review actions ---- */
+/* ==========================================================================
+   Review actions
+   ========================================================================== */
 
 .review-actions {
   margin: 1.5rem 0;
-  padding: 1rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
+  padding: 1.1rem 1.25rem;
+  background: var(--surface);
+  border: 1.5px solid var(--rule);
+  border-radius: 4px;
 }
 
 .review-action-buttons {
   display: flex;
-  gap: 0.5rem;
-  margin: 0.75rem 0;
+  gap: 0.6rem;
+  margin: 0.85rem 0;
+  flex-wrap: wrap;
 }
 
 .field-overrides {
-  margin: 0.75rem 0;
-  padding: 0.75rem;
-  background: var(--color-bg);
-  border-radius: 6px;
+  margin: 0.85rem 0;
+  padding: 0.85rem;
+  background: var(--paper);
+  border-radius: 3px;
 }
 
 .duplicate-search-form {
   display: flex;
   gap: 0.5rem;
-  margin: 0.75rem 0;
+  margin: 0.85rem 0;
 }
 
 .duplicate-search-results {
@@ -430,11 +738,13 @@ label {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.5rem;
-  border-bottom: 1px solid var(--color-border);
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--rule);
 }
 
-/* ---- tables ---- */
+/* ==========================================================================
+   Tables — the ledger
+   ========================================================================== */
 
 table {
   width: 100%;
@@ -446,31 +756,45 @@ table {
 th,
 td {
   text-align: left;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--color-border);
-  font-size: 0.9rem;
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.88rem;
+}
+
+th {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-muted);
+  border-bottom: 1.5px solid var(--ink);
 }
 
 .comparison-differs {
-  background: var(--color-warning-bg);
+  background: var(--flag-ochre-bg);
 }
 
 .queue-filters {
   display: flex;
   gap: 0.5rem;
-  margin-bottom: 1rem;
+  margin-bottom: 1.1rem;
   flex-wrap: wrap;
 }
 
+.queue-filters button {
+  font-size: 0.82rem;
+  padding: 0.4rem 0.85rem;
+}
+
 .filter-active {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  font-weight: 600;
+  border-color: var(--clerk);
+  color: var(--clerk);
+  background: var(--surface);
 }
 
 .audit-filter-form {
   display: flex;
   gap: 0.5rem;
-  margin-bottom: 1rem;
+  margin-bottom: 1.1rem;
   max-width: 420px;
 }

@@ -240,13 +240,14 @@ export function ReviewDetailPage() {
           <div className="review-action-buttons">
             <button
               type="button"
+              className="btn-primary btn-stamp"
               onClick={handleApprove}
               disabled={busy || blockedBySegregation}
               title={blockedBySegregation ? 'You cannot approve your own submission for this domain' : undefined}
             >
               Approve
             </button>
-            <button type="button" onClick={handleReject} disabled={busy}>
+            <button type="button" className="btn-danger" onClick={handleReject} disabled={busy}>
               Reject
             </button>
             <button type="button" onClick={handleRequestInfo} disabled={busy}>

@@ -119,6 +119,7 @@ export function DuplicateResolvePage() {
           <div className="review-action-buttons">
             <button
               type="button"
+              className="btn-primary btn-stamp"
               onClick={() => resolve('accept_all')}
               disabled={busy || blockedBySegregation}
               title={blockedBySegregation ? 'You cannot resolve a duplicate for your own submission' : undefined}
@@ -127,6 +128,7 @@ export function DuplicateResolvePage() {
             </button>
             <button
               type="button"
+              className="btn-primary"
               onClick={() => resolve('partial')}
               disabled={busy || selectedFields.size === 0 || blockedBySegregation}
               title={
@@ -139,7 +141,7 @@ export function DuplicateResolvePage() {
             >
               Accept selected fields{differingFields.length > 0 ? ` (${selectedFields.size} selected)` : ''}
             </button>
-            <button type="button" onClick={() => resolve('reject_all')} disabled={busy}>
+            <button type="button" className="btn-danger" onClick={() => resolve('reject_all')} disabled={busy}>
               Reject
             </button>
           </div>
