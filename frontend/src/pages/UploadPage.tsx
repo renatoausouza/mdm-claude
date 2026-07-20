@@ -1,15 +1,12 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import * as api from '../api/endpoints'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { ProgressBar } from '../components/ProgressBar'
-import type { Domain, JobResponse } from '../types/api'
-import { DOMAIN_LABELS, DOMAINS } from '../types/api'
-import { humanize } from '../utils'
+import { StatusBadge } from '../components/StatusBadge'
+import { DOMAIN_LABELS, type JobResponse } from '../types/api'
 
 export function UploadPage() {
-  const navigate = useNavigate()
-  const [domain, setDomain] = useState<Domain>('supplier')
   const [file, setFile] = useState<File | null>(null)
   const [error, setError] = useState<unknown>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -22,7 +19,7 @@ export function UploadPage() {
     setResult(null)
     setSubmitting(true)
     try {
-      const response = await api.uploadDocument(file, domain)
+      const response = await api.uploadDocument(file)
       setResult(response)
     } catch (err) {
       setError(err)
@@ -34,17 +31,8 @@ export function UploadPage() {
   return (
     <div>
       <h1>Upload a document</h1>
+      <p>Supplier, Client, and Product candidates are all extracted from a single upload.</p>
       <form onSubmit={handleSubmit} className="upload-form">
-        <label>
-          Domain
-          <select value={domain} onChange={(e) => setDomain(e.target.value as Domain)}>
-            {DOMAINS.map((d) => (
-              <option key={d} value={d}>
-                {DOMAIN_LABELS[d]}
-              </option>
-            ))}
-          </select>
-        </label>
         <label>
           File
           <input type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} required />
@@ -53,22 +41,37 @@ export function UploadPage() {
         <button type="submit" disabled={submitting || !file}>
           {submitting ? 'Uploading and extracting…' : 'Upload'}
         </button>
-        {submitting && <ProgressBar label="Extracting document — this can take up to a minute…" />}
+        {submitting && <ProgressBar label="Extracting document — this can take a few minutes…" />}
       </form>
 
       {result && (
         <div className="upload-result">
-          <h2>Job created</h2>
-          <p>
-            Status: <strong>{humanize(result.status)}</strong>
-          </p>
-          {result.duplicate_review_case_id && (
-            <p>A matching record was found — this candidate needs duplicate review.</p>
-          )}
+          <h2>Extraction results</h2>
+          <table className="queue-table">
+            <thead>
+              <tr>
+                <th>Domain</th>
+                <th>Status</th>
+                <th>Duplicate?</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.all_jobs.map((job) => (
+                <tr key={job.id}>
+                  <td>{DOMAIN_LABELS[job.domain]}</td>
+                  <td>
+                    <StatusBadge status={job.status} />
+                  </td>
+                  <td>{job.duplicate_review_case_id ? 'Yes' : '—'}</td>
+                  <td>
+                    <Link to={`/job/${job.id}`}>View job</Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
           <div className="upload-result-actions">
-            <button type="button" onClick={() => navigate(`/job/${result.id}`)}>
-              View job
-            </button>
             <button
               type="button"
               onClick={() => {

@@ -47,10 +47,11 @@ export function verifyMfa(totpCode: string): Promise<{ status: string }> {
 
 // ---- documents / jobs ----
 
-export function uploadDocument(file: File, domain: Domain): Promise<JobResponse> {
+export function uploadDocument(file: File): Promise<JobResponse> {
+  // A single upload now extracts every domain (supplier/client/product) at
+  // once — no domain to pick here anymore, see JobResponse.all_jobs.
   const formData = new FormData()
   formData.append('file', file)
-  formData.append('domain', domain)
   return uploadFile<JobResponse>('/documents', formData)
 }
 

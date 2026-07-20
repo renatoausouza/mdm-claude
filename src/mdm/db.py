@@ -80,7 +80,11 @@ class ExtractionJob(Base):
     __tablename__ = "extraction_jobs"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    document_id: Mapped[str] = mapped_column(String, ForeignKey("documents.id"), unique=True, index=True)
+    # Not unique: one Document can have up to one ExtractionJob per domain
+    # (supplier/client/product) since a single upload now extracts all three
+    # rather than the one the caller picked (see _ensure_document_id_not_unique
+    # below for the migration off the old unique index).
+    document_id: Mapped[str] = mapped_column(String, ForeignKey("documents.id"), index=True)
     # queued -> pending_review | extraction_failed | unsupported_format
     # pending_review -> approved | rejected | needs_info (#6)
     # needs_info -> approved | rejected (a reviewer can decide once
@@ -229,6 +233,36 @@ def _add_missing_columns(engine: Engine) -> None:
                     raise
 
 
+def _ensure_extraction_job_document_id_not_unique(engine: Engine) -> None:
+    """Pre-multi-domain-upload databases have a UNIQUE index on
+    extraction_jobs.document_id (the old one-Document-one-ExtractionJob
+    invariant). A single upload now creates up to one ExtractionJob per
+    domain, so that uniqueness must go — but SQLite can't just drop a
+    column's UNIQUE constraint in place, so this drops the old unique index
+    and recreates a plain one, mirroring _add_missing_columns' approach to
+    evolving an existing SQLite schema without a real migration tool.
+    """
+    inspector = inspect(engine)
+    if "extraction_jobs" not in inspector.get_table_names():
+        return  # a brand-new table — create_all() already made it non-unique
+    for index in inspector.get_indexes("extraction_jobs"):
+        if index["column_names"] == ["document_id"] and index["unique"]:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(f'DROP INDEX {index["name"]}'))
+                    conn.execute(
+                        text(
+                            f'CREATE INDEX IF NOT EXISTS {index["name"]} '
+                            "ON extraction_jobs (document_id)"
+                        )
+                    )
+            except OperationalError:
+                # Lost a race with another process (app server / purge job)
+                # performing the same migration — harmless either way.
+                pass
+            break
+
+
 @lru_cache
 def get_engine(database_url: str) -> Engine:
     connect_args = {}
@@ -244,6 +278,7 @@ def get_engine(database_url: str) -> Engine:
     engine = create_engine(database_url, connect_args=connect_args)
     Base.metadata.create_all(engine)
     _add_missing_columns(engine)
+    _ensure_extraction_job_document_id_not_unique(engine)
     return engine
 
 

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from mdm import config, storage
 from mdm.auth import get_current_user
@@ -23,13 +24,31 @@ router = APIRouter()
 ALLOWED_EXTENSIONS = {".pdf", ".msg", ".json", ".xml", ".txt", ".log", ".png", ".jpg", ".jpeg"}
 
 
+class JobSummary(BaseModel):
+    id: str
+    document_id: str
+    domain: str
+    status: str
+    created_at: datetime.datetime
+    uploaded_by: str | None
+    duplicate_review_case_id: str | None = None
+
+
 class JobResponse(BaseModel):
     id: str
     document_id: str
     content_hash: str
+    domain: str
     status: str
     retention_until: datetime.datetime | None
     duplicate_review_case_id: str | None = None
+    # Every domain (supplier/client/product) is now extracted from a single
+    # upload rather than just the one named by `domain` — this carries all
+    # of them so a caller doesn't need a follow-up request to discover the
+    # other two. `id`/`status`/etc. above stay the job matching the
+    # requested `domain`, unchanged, for existing callers that only read
+    # those top-level fields.
+    all_jobs: list[JobSummary] = []
 
 
 def _compute_retention_until() -> datetime.datetime | None:
@@ -39,14 +58,101 @@ def _compute_retention_until() -> datetime.datetime | None:
     return datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=retention_days)
 
 
-def _to_response(document: Document, job: ExtractionJob, duplicate_review_case_id: str | None = None) -> JobResponse:
+def _job_duplicate_case_ids(session: Session, job_ids: list[str]) -> dict[str, str]:
+    pending_cases = (
+        session.query(DuplicateReviewCase)
+        .filter(DuplicateReviewCase.extraction_job_id.in_(job_ids), DuplicateReviewCase.status == "pending")
+        .all()
+    )
+    return {case.extraction_job_id: case.id for case in pending_cases}
+
+
+def _job_summaries(
+    jobs: list[ExtractionJob], uploaded_by: str | None, dup_case_by_job: dict[str, str]
+) -> list[JobSummary]:
+    return [
+        JobSummary(
+            id=job.id,
+            document_id=job.document_id,
+            domain=job_domain(job),
+            status=job.status,
+            created_at=job.created_at,
+            uploaded_by=uploaded_by,
+            duplicate_review_case_id=dup_case_by_job.get(job.id),
+        )
+        for job in jobs
+    ]
+
+
+def _create_and_extract_job(
+    session: Session, document_id: str, domain_name: str, content: bytes, extension: str
+) -> ExtractionJob:
+    """Creates one ExtractionJob for one domain and, for a PDF, immediately
+    runs that domain's extraction + duplicate-detection — the per-domain
+    unit of work a single upload now repeats for every domain in
+    DOMAIN_SPECS (supplier, client, product), instead of just the one the
+    caller named."""
+    job = _new_job(document_id, domain_name)
+    session.add(job)
+    _run_extraction(session, job, content, extension)
+    return job
+
+
+def _new_job(document_id: str, domain_name: str) -> ExtractionJob:
+    return ExtractionJob(
+        id=str(uuid.uuid4()),
+        document_id=document_id,
+        domain=domain_name,
+        status="queued",
+        created_at=datetime.datetime.now(datetime.timezone.utc),
+    )
+
+
+def _run_extraction(session: Session, job: ExtractionJob, content: bytes, extension: str) -> None:
+    domain_name = job_domain(job)
+    spec = DOMAIN_SPECS[domain_name]
+    if extension == ".pdf":
+        try:
+            result = spec.extract(content)
+            job.result_json = result.model_dump_json()
+            # Scored candidates always land in PendingReview regardless of
+            # reliability tier — nothing may be auto-approved (D14, FR-12);
+            # the score itself is exposed via GET .../result for the
+            # reviewer, not used to bypass review here.
+            job.status = "pending_review"
+            # Held alongside PendingReview, per the state machine in
+            # solution-brief.md §7 — never blocks scoring/review, only adds
+            # a case for the duplicate-resolution path to pick up.
+            if spec.detect_duplicate is not None:
+                duplicate_case = spec.detect_duplicate(session, job, result)
+                if duplicate_case is not None:
+                    session.add(duplicate_case)
+        except Exception:  # document content is untrusted; must not crash the upload request
+            logger.exception("Extraction failed for document %s (domain=%s)", job.document_id, domain_name)
+            job.status = "extraction_failed"
+            job.error_detail = "Extraction failed; see server logs for details"
+    else:
+        # No pipeline exists yet for this format — say so explicitly rather
+        # than leaving the job at "queued" forever with no signal to the
+        # caller that it will never advance.
+        job.status = "unsupported_format"
+
+
+def _to_response(
+    document: Document,
+    job: ExtractionJob,
+    all_jobs: list[JobSummary],
+    duplicate_review_case_id: str | None = None,
+) -> JobResponse:
     return JobResponse(
         id=job.id,
         document_id=document.id,
         content_hash=document.content_hash,
+        domain=job_domain(job),
         status=job.status,
         retention_until=document.retention_until,
         duplicate_review_case_id=duplicate_review_case_id,
+        all_jobs=all_jobs,
     )
 
 
@@ -56,8 +162,7 @@ def upload_document(
     domain: str = Form("supplier"),
     current_user: User = Depends(get_current_user),
 ) -> JobResponse:
-    spec = DOMAIN_SPECS.get(domain)
-    if spec is None:
+    if domain not in DOMAIN_SPECS:
         raise HTTPException(
             status_code=400, detail=f"Unsupported domain: {domain!r} (must be one of {sorted(DOMAIN_SPECS)})"
         )
@@ -79,27 +184,22 @@ def upload_document(
     with get_session() as session:
         existing_document = session.query(Document).filter_by(content_hash=content_hash).first()
         if existing_document is not None:
-            job = session.query(ExtractionJob).filter_by(document_id=existing_document.id).first()
-            assert job is not None, "every Document row must have a matching ExtractionJob"
-            # Content-hash idempotency (#2) predates multi-domain uploads
-            # (#8/#10) and is keyed purely by file bytes — one Document has
-            # exactly one ExtractionJob (a hard 1:1, DB-enforced). Silently
-            # returning that job's Supplier result for a re-upload someone
-            # explicitly requested as domain="client" would hand back the
-            # wrong candidate with no indication anything was ignored; fail
-            # loud instead of guessing which domain the caller actually
-            # wants for this content.
-            existing_domain = job_domain(job)
-            if existing_domain != domain:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"This content was already uploaded under domain={existing_domain!r}; "
-                    f"re-uploading identical content under a different domain ({domain!r}) is not supported.",
+            existing_jobs = session.query(ExtractionJob).filter_by(document_id=existing_document.id).all()
+            assert existing_jobs, "every Document row must have at least one matching ExtractionJob"
+            # A single upload now extracts every domain in DOMAIN_SPECS, not
+            # just the one named in `domain` — but documents uploaded before
+            # this change have only one job. Backfill whichever domains this
+            # document is still missing using the just-read bytes, so a
+            # re-upload of known content "catches up" instead of the old
+            # behavior of 409ing on a domain it wasn't originally requested
+            # under.
+            existing_domains = {job_domain(job) for job in existing_jobs}
+            for missing_domain in (d for d in DOMAIN_SPECS if d not in existing_domains):
+                existing_jobs.append(
+                    _create_and_extract_job(session, existing_document.id, missing_domain, content, extension)
                 )
-            existing_duplicate_case = (
-                session.query(DuplicateReviewCase).filter_by(extraction_job_id=job.id, status="pending").first()
-            )
-            existing_duplicate_case_id = existing_duplicate_case.id if existing_duplicate_case is not None else None
+            job = next(j for j in existing_jobs if job_domain(j) == domain)
+
             if not storage.document_exists(existing_document.id):
                 if existing_document.purged_at is not None:
                     # The file was intentionally removed by the retention
@@ -120,7 +220,13 @@ def upload_document(
                         )
                     )
                     session.commit()
-                    return _to_response(existing_document, job, existing_duplicate_case_id)
+                    dup_case_by_job = _job_duplicate_case_ids(session, [j.id for j in existing_jobs])
+                    return _to_response(
+                        existing_document,
+                        job,
+                        _job_summaries(existing_jobs, existing_document.uploaded_by, dup_case_by_job),
+                        dup_case_by_job.get(job.id),
+                    )
                 raise HTTPException(
                     status_code=500,
                     detail="Document record exists but its stored file is missing",
@@ -142,8 +248,14 @@ def upload_document(
                         occurred_at=datetime.datetime.now(datetime.timezone.utc),
                     )
                 )
-                session.commit()
-            return _to_response(existing_document, job, existing_duplicate_case_id)
+            session.commit()
+            dup_case_by_job = _job_duplicate_case_ids(session, [j.id for j in existing_jobs])
+            return _to_response(
+                existing_document,
+                job,
+                _job_summaries(existing_jobs, existing_document.uploaded_by, dup_case_by_job),
+                dup_case_by_job.get(job.id),
+            )
 
         document_id = str(uuid.uuid4())
         document = Document(
@@ -154,15 +266,17 @@ def upload_document(
             uploaded_by=current_user.id,
             retention_until=_compute_retention_until(),
         )
-        job = ExtractionJob(
-            id=str(uuid.uuid4()),
-            document_id=document_id,
-            domain=domain,
-            status="queued",
-            created_at=datetime.datetime.now(datetime.timezone.utc),
-        )
         session.add(document)
-        session.add(job)
+
+        # One upload now runs every domain's extraction (not just the one
+        # named by `domain`) so a single PDF yields Supplier, Client, and
+        # Product candidates without re-uploading. Jobs are created bare
+        # (no extraction yet) and committed first — cheap, and lets the
+        # IntegrityError race-check below happen before any potentially
+        # expensive extraction work runs.
+        jobs = [_new_job(document_id, domain_name) for domain_name in DOMAIN_SPECS]
+        for job in jobs:
+            session.add(job)
 
         try:
             session.commit()
@@ -172,9 +286,16 @@ def upload_document(
             session.rollback()
             winner_document = session.query(Document).filter_by(content_hash=content_hash).first()
             assert winner_document is not None
-            winner_job = session.query(ExtractionJob).filter_by(document_id=winner_document.id).first()
-            assert winner_job is not None
-            return _to_response(winner_document, winner_job)
+            winner_jobs = session.query(ExtractionJob).filter_by(document_id=winner_document.id).all()
+            assert winner_jobs
+            winner_job = next(j for j in winner_jobs if job_domain(j) == domain)
+            dup_case_by_job = _job_duplicate_case_ids(session, [j.id for j in winner_jobs])
+            return _to_response(
+                winner_document,
+                winner_job,
+                _job_summaries(winner_jobs, winner_document.uploaded_by, dup_case_by_job),
+                dup_case_by_job.get(winner_job.id),
+            )
 
         # Only write to disk after the DB has confirmed this content_hash is
         # uniquely ours — avoids leaving an orphaned encrypted file if the
@@ -187,34 +308,8 @@ def upload_document(
         # burst of slow extractions can starve other sync routes (including
         # GET /jobs/{id}/result polling) — a known, accepted limitation of
         # the synchronous-for-now design, not something this ticket fixes.
-        duplicate_case: DuplicateReviewCase | None = None
-        if extension == ".pdf":
-            try:
-                result = spec.extract(content)
-                job.result_json = result.model_dump_json()
-                # Scored candidates always land in PendingReview regardless
-                # of reliability tier — nothing may be auto-approved (D14,
-                # FR-12); the score itself is exposed via GET .../result for
-                # the reviewer, not used to bypass review here.
-                job.status = "pending_review"
-                # Held alongside PendingReview, per the state machine in
-                # solution-brief.md §7 — never blocks scoring/review, only
-                # adds a case for the duplicate-resolution path (#7
-                # Supplier, #9 Client, #11 Product all wire up
-                # detect_duplicate the same way) to pick up.
-                if spec.detect_duplicate is not None:
-                    duplicate_case = spec.detect_duplicate(session, job, result)
-                    if duplicate_case is not None:
-                        session.add(duplicate_case)
-            except Exception:  # document content is untrusted; must not crash the upload request
-                logger.exception("Extraction failed for document %s (domain=%s)", document_id, domain)
-                job.status = "extraction_failed"
-                job.error_detail = "Extraction failed; see server logs for details"
-        else:
-            # No pipeline exists yet for this format — say so explicitly
-            # rather than leaving the job at "queued" forever with no
-            # signal to the caller that it will never advance.
-            job.status = "unsupported_format"
+        for job in jobs:
+            _run_extraction(session, job, content, extension)
 
         session.add(
             AuditLogEntry(
@@ -222,23 +317,20 @@ def upload_document(
                 document_id=document_id,
                 action="submitted",
                 actor_user_id=current_user.id,
-                after_json=json.dumps({"job_status": job.status}),
+                after_json=json.dumps({"job_statuses": {job_domain(j): j.status for j in jobs}}),
                 occurred_at=datetime.datetime.now(datetime.timezone.utc),
             )
         )
         session.commit()
 
-        return _to_response(document, job, duplicate_case.id if duplicate_case is not None else None)
-
-
-class JobSummary(BaseModel):
-    id: str
-    document_id: str
-    domain: str
-    status: str
-    created_at: datetime.datetime
-    uploaded_by: str | None
-    duplicate_review_case_id: str | None = None
+        primary_job = next(j for j in jobs if job_domain(j) == domain)
+        dup_case_by_job = _job_duplicate_case_ids(session, [j.id for j in jobs])
+        return _to_response(
+            document,
+            primary_job,
+            _job_summaries(jobs, document.uploaded_by, dup_case_by_job),
+            dup_case_by_job.get(primary_job.id),
+        )
 
 
 class JobListResponse(BaseModel):

@@ -198,11 +198,11 @@ def test_upload_writes_a_submitted_audit_log_entry() -> None:
         assert entry.actor_user_id is not None
 
 
-def test_reuploading_identical_content_under_a_different_domain_is_rejected() -> None:
-    # content-hash idempotency (#2) is keyed purely by file bytes, with one
-    # Document -> one ExtractionJob (DB-enforced 1:1) — re-requesting a
-    # different domain (#8/#10) for the same bytes must not silently return
-    # the first upload's job under a domain the caller never asked for.
+def test_reuploading_identical_content_under_a_different_domain_reveals_that_domain_too() -> None:
+    # A single upload now extracts every domain (supplier/client/product) at
+    # once — re-requesting a different `domain` for identical bytes no
+    # longer 409s (that domain's job already exists from the first upload;
+    # `domain` only selects which job's fields are echoed at the top level).
     client = TestClient(app)
     headers = _uploader_headers(client)
     content = b"identical content, two different domain requests"
@@ -214,6 +214,8 @@ def test_reuploading_identical_content_under_a_different_domain_is_rejected() ->
         headers=headers,
     )
     assert first.status_code == 201
+    first_domains = {j["domain"] for j in first.json()["all_jobs"]}
+    assert first_domains == {"supplier", "client", "product"}
 
     second = client.post(
         "/documents",
@@ -221,4 +223,10 @@ def test_reuploading_identical_content_under_a_different_domain_is_rejected() ->
         data={"domain": "client"},
         headers=headers,
     )
-    assert second.status_code == 409
+    assert second.status_code == 201
+    assert second.json()["domain"] == "client"
+    assert second.json()["document_id"] == first.json()["document_id"]
+    # Same job ids both times — nothing was re-created on the re-upload.
+    second_ids_by_domain = {j["domain"]: j["id"] for j in second.json()["all_jobs"]}
+    first_ids_by_domain = {j["domain"]: j["id"] for j in first.json()["all_jobs"]}
+    assert second_ids_by_domain == first_ids_by_domain

@@ -135,9 +135,15 @@ export interface JobResponse {
   id: string
   document_id: string
   content_hash: string
+  domain: Domain
   status: JobStatus
   retention_until: string | null
   duplicate_review_case_id: string | null
+  // Every domain (supplier/client/product) is now extracted from a single
+  // upload — this carries all of them so the upload result can show all
+  // three without a follow-up request. `id`/`status`/etc. above are just
+  // the job matching whichever `domain` was requested.
+  all_jobs: JobSummary[]
 }
 
 export interface JobResultResponse {
