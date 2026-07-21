@@ -62,6 +62,35 @@ def test_no_client_role_found_leaves_tax_id_none() -> None:
     assert result.tax_id is None
 
 
+def test_valid_tax_id_under_a_dados_do_destinatario_header_is_extracted() -> None:
+    # Regression test for the real bug report: a genuinely valid CNPJ
+    # under a "Dados do Destinatário" section header (standard NFe/DANFE
+    # phrasing) must populate tax_id, not silently end up None because the
+    # header wasn't recognized as a role label.
+    fake = FakeExtractionClient({"name": "Agencia Focus", "email": None, "telephone": None, "address": None})
+    pdf_bytes = _make_pdf_bytes("Dados do Destinatario\nRazao Social\nCNPJ/CPF: 22.333.444/0001-81")
+
+    result = run_client_extraction(pdf_bytes, llm_client=fake)
+
+    assert result.tax_id is not None
+    assert result.tax_id.value == "22.333.444/0001-81"
+    assert result.rejected_tax_ids == []
+
+
+def test_checksum_invalid_client_tax_id_is_reported_as_rejected_not_silently_missing() -> None:
+    fake = FakeExtractionClient({"name": "Agencia de Marketing Digital Focus", "email": None, "telephone": None, "address": None})
+    pdf_bytes = _make_pdf_bytes("Destinatario CNPJ/CPF: 22.333.444/0001-55")
+
+    result = run_client_extraction(pdf_bytes, llm_client=fake)
+
+    assert result.tax_id is None
+    assert result.parties == []
+    assert len(result.rejected_tax_ids) == 1
+    assert result.rejected_tax_ids[0].value == "22.333.444/0001-55"
+    assert result.rejected_tax_ids[0].kind == "cnpj"
+    assert result.rejected_tax_ids[0].role == "client"
+
+
 def test_score_client_requires_name_and_tax_id() -> None:
     result = ClientCandidateResult(name=None, tax_id=None)
 

@@ -120,6 +120,37 @@ def test_tomador_label_is_recognized_as_client_role() -> None:
     assert parties[0].role == "client"
 
 
+def test_dados_do_emitente_header_is_recognized_as_supplier_role() -> None:
+    # Real-world gap found investigating a reported "CNPJ not extracted"
+    # bug: "Dados do Emitente" / "Dados do Destinatário" is standard
+    # Brazilian NFe/DANFE header phrasing, at least as common as a bare
+    # "Emitente"/"Destinatário" header — but "emitente" isn't the line's
+    # first WORD, so the backward start-of-line search used to miss it
+    # entirely, silently mistagging even a genuinely valid CNPJ as
+    # "unknown" instead of "supplier".
+    pdf_bytes = _make_pdf("Dados do Emitente\nRazao Social\nCNPJ: 11.223.344/0001-86")
+    pages = extract_pdf_pages(pdf_bytes)
+    candidates = find_candidates(pages)
+
+    parties = tag_roles(candidates, pages)
+
+    assert parties[0].role == "supplier"
+    assert parties[0].role_evidence is not None
+    assert parties[0].role_evidence.inferred is False
+
+
+def test_dados_do_destinatario_header_is_recognized_as_client_role() -> None:
+    pdf_bytes = _make_pdf("Dados do Destinatario\nRazao Social\nCNPJ/CPF: 22.333.444/0001-81")
+    pages = extract_pdf_pages(pdf_bytes)
+    candidates = find_candidates(pages)
+
+    parties = tag_roles(candidates, pages)
+
+    assert parties[0].role == "client"
+    assert parties[0].role_evidence is not None
+    assert parties[0].role_evidence.inferred is False
+
+
 def test_unlabeled_candidate_after_a_labeled_block_does_not_inherit_its_label() -> None:
     # Regression test found in code review of #14: the widened backward
     # search must stop at the nearest earlier OTHER candidate's own line —

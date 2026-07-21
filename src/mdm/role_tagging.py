@@ -63,6 +63,27 @@ def _find_role_label(context: str, anchor_offset: int) -> tuple[str, str] | None
     return best[1], best[2]
 
 
+_HEADER_PREFIXES = ("dados do ", "dados da ", "dados dos ")
+
+
+def _strip_header_prefix(line: str) -> str:
+    """"Dados do Emitente" / "Dados do Destinatário" is standard NFe/DANFE
+    header phrasing — at least as common in real invoices as a bare
+    "Emitente"/"Destinatário" header — but the label itself isn't the
+    line's first word, so _find_preceding_line_start_label's start-of-line
+    match would otherwise miss it entirely (#confirmed against a real
+    reported document: a genuinely valid CNPJ under "DADOS DO
+    DESTINATÁRIO" was silently mistagged "unknown" and never populated
+    the client's tax_id field). Stripping only this specific, narrow set
+    of known non-semantic header prefixes — not a general "search
+    anywhere in the line" relaxation — keeps the anti-false-positive
+    protection this function's docstring describes intact."""
+    for prefix in _HEADER_PREFIXES:
+        if line.startswith(prefix):
+            return line[len(prefix) :]
+    return line
+
+
 def _find_preceding_line_start_label(text: str) -> tuple[str, str] | None:
     """Find the role label on the nearest line (within `text`, scanned
     backward) that STARTS with that label — used for the backward
@@ -70,13 +91,15 @@ def _find_preceding_line_start_label(text: str) -> tuple[str, str] | None:
     back through the page (in true reading order, per #14's ordering fix)
     to the nearest preceding section header, however many lines above it
     sits. Requiring the label to start its own line (e.g. "Destinatário /
-    Remetente", "Tomador do(s) Serviço(s)") — rather than matching
-    anywhere in `text` — is what distinguishes a real section header from
-    a role word used incidentally in unrelated running prose (e.g.
-    "...exceto pelo comprador original." in return-policy boilerplate): a
-    real false-positive risk once this search scans more than one line."""
+    Remetente", "Tomador do(s) Serviço(s)", or "Dados do Emitente" once
+    _strip_header_prefix accounts for that specific prefix) — rather than
+    matching anywhere in `text` — is what distinguishes a real section
+    header from a role word used incidentally in unrelated running prose
+    (e.g. "...exceto pelo comprador original." in return-policy
+    boilerplate): a real false-positive risk once this search scans more
+    than one line."""
     for line in reversed(text.split("\n")):
-        stripped = line.strip().lower()
+        stripped = _strip_header_prefix(line.strip().lower())
         if not stripped:
             continue
         for role, label, pattern in _LABEL_PATTERNS:

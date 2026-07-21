@@ -3,12 +3,12 @@ from pydantic import BaseModel
 from mdm import config
 from mdm.cnpj_validation import is_valid_cnpj
 from mdm.cpf_validation import is_valid_cpf
-from mdm.extraction_schema import FieldValue, PartyInfo, llm_field_to_value
+from mdm.extraction_schema import FieldValue, PartyInfo, RejectedTaxId, llm_field_to_value
 from mdm.field_validation import is_valid_email, is_valid_telephone
 from mdm.llm_extraction import OciGenAiExtractionClient, extract_client_fields
-from mdm.party_extraction import party_to_info
+from mdm.party_extraction import party_to_info, rejected_party_to_info
 from mdm.pdf_extraction import extract_pdf_pages
-from mdm.regex_candidates import find_candidates
+from mdm.regex_candidates import find_candidates, find_rejected_tax_id_candidates
 from mdm.role_tagging import tag_roles
 from mdm.scoring import DomainSpec, ScoringResult, score_candidate
 
@@ -20,6 +20,9 @@ class ClientCandidateResult(BaseModel):
     telephone: FieldValue | None = None
     address: FieldValue | None = None
     parties: list[PartyInfo] = []
+    # See SupplierCandidateResult.rejected_tax_ids — same rationale, same
+    # never-used-to-populate-a-real-field guarantee.
+    rejected_tax_ids: list[RejectedTaxId] = []
 
 
 def run_client_extraction(
@@ -31,6 +34,9 @@ def run_client_extraction(
     candidates = find_candidates(pages)
     parties = tag_roles(candidates, pages)
     party_infos = [party_to_info(p) for p in parties]  # computed once, reused for tax_id_field below
+
+    rejected_parties = tag_roles(find_rejected_tax_id_candidates(pages), pages)
+    rejected_tax_ids = [rejected_party_to_info(p) for p in rejected_parties]
 
     client_info = next((info for info in party_infos if info.role == "client"), None)
     tax_id_field = client_info.tax_id if client_info is not None else None
@@ -45,6 +51,7 @@ def run_client_extraction(
         telephone=llm_field_to_value(llm_fields, "telephone"),
         address=llm_field_to_value(llm_fields, "address"),
         parties=party_infos,
+        rejected_tax_ids=rejected_tax_ids,
     )
 
 

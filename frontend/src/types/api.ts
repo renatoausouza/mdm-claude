@@ -71,6 +71,17 @@ export interface PartyInfo {
   role_evidence: RoleEvidenceInfo | null
 }
 
+// A CNPJ/CPF-shaped value found in the document that failed checksum
+// validation — never used to populate cnpj/tax_id, only surfaced so a
+// reviewer sees "found but rejected" instead of mistaking a null field
+// for a plain extraction miss.
+export interface RejectedTaxId {
+  value: string
+  kind: 'cnpj' | 'cpf' | string
+  role: string
+  role_evidence: RoleEvidenceInfo | null
+}
+
 // ---- per-domain candidate result shapes (the `result` field of
 // JobResultResponse, once narrowed by `domain`) ----
 
@@ -81,6 +92,7 @@ export interface SupplierCandidateResult {
   telephone: FieldValue | null
   address: FieldValue | null
   parties: PartyInfo[]
+  rejected_tax_ids: RejectedTaxId[]
 }
 
 export interface ClientCandidateResult {
@@ -90,6 +102,7 @@ export interface ClientCandidateResult {
   telephone: FieldValue | null
   address: FieldValue | null
   parties: PartyInfo[]
+  rejected_tax_ids: RejectedTaxId[]
 }
 
 export interface ProductCandidateResult {

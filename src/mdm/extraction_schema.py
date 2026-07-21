@@ -44,6 +44,21 @@ class PartyInfo(BaseModel):
     role_evidence: RoleEvidenceInfo | None = None
 
 
+class RejectedTaxId(BaseModel):
+    """A CNPJ/CPF-shaped value that was found in the document but failed
+    checksum validation — never a candidate for a real field (see
+    regex_candidates.find_rejected_tax_id_candidates), kept only so a
+    reviewer can be told *why* a tax ID field came back empty instead of
+    it looking like extraction simply missed it. Deliberately not a
+    FieldValue: there's no meaningful confidence/normalized_value for a
+    value the system is explicitly saying is NOT usable."""
+
+    value: str
+    kind: str  # "cnpj" | "cpf"
+    role: str
+    role_evidence: RoleEvidenceInfo | None = None
+
+
 def llm_field_to_value(llm_fields: dict[str, LlmFieldResult | None], name: str) -> FieldValue | None:
     # Identical across every extraction domain (Supplier/Client/Product) —
     # one definition instead of three copies of the same closure.

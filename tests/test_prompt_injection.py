@@ -124,7 +124,15 @@ def test_document_with_embedded_approval_instructions_only_produces_a_candidate(
     result = client.get(f"/jobs/{job_id}/result", headers=headers)
     body = result.json()
     assert body["status"] == "pending_review"
-    assert set(body["result"].keys()) <= {"cnpj", "legal_name", "email", "telephone", "address", "parties"}
+    assert set(body["result"].keys()) <= {
+        "cnpj",
+        "legal_name",
+        "email",
+        "telephone",
+        "address",
+        "parties",
+        "rejected_tax_ids",
+    }
 
     with get_session() as session:
         assert session.query(MasterRecord).count() == 0

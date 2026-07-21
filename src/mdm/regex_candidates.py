@@ -42,6 +42,9 @@ class RegexCandidate:
     match_start: int  # character offset within the page's text, for role-tagging context
 
 
+_TAX_ID_VALIDATORS = {"cnpj": is_valid_cnpj, "cpf": is_valid_cpf}
+
+
 def find_candidates(pages: list[PdfPage]) -> list[RegexCandidate]:
     candidates = []
     for page in pages:
@@ -53,9 +56,41 @@ def find_candidates(pages: list[PdfPage]) -> list[RegexCandidate]:
         for kind, pattern in _PATTERNS.items():
             for match in pattern.finditer(page.text):
                 value = match.group()
-                if kind == "cnpj" and not is_valid_cnpj(value):
+                validator = _TAX_ID_VALIDATORS.get(kind)
+                if validator is not None and not validator(value):
                     continue
-                if kind == "cpf" and not is_valid_cpf(value):
+                occurrence_index = occurrence_counts.get((kind, value), 0)
+                occurrence_counts[(kind, value)] = occurrence_index + 1
+                candidates.append(
+                    RegexCandidate(
+                        value=value,
+                        kind=kind,
+                        page_number=page.page_number,
+                        bbox=page.find_bbox(value, occurrence_index),
+                        match_start=match.start(),
+                    )
+                )
+    return candidates
+
+
+def find_rejected_tax_id_candidates(pages: list[PdfPage]) -> list[RegexCandidate]:
+    """Mirrors find_candidates but keeps only CNPJ/CPF-shaped matches that
+    FAILED checksum validation — the exact opposite filter. These must
+    never enter the trusted candidate pool find_candidates() feeds into
+    role-tagging/extraction (a checksum-invalid tax ID is never usable as
+    an identity key), but a caller can still use this list purely to
+    explain to a reviewer *why* a tax ID field came back empty — a
+    something-was-found-but-rejected message reads very differently from
+    "extraction just missed it," and the two shouldn't be indistinguishable
+    on a review screen."""
+    candidates = []
+    for page in pages:
+        occurrence_counts: dict[tuple[str, str], int] = {}
+        for kind, validator in _TAX_ID_VALIDATORS.items():
+            pattern = _PATTERNS[kind]
+            for match in pattern.finditer(page.text):
+                value = match.group()
+                if validator(value):
                     continue
                 occurrence_index = occurrence_counts.get((kind, value), 0)
                 occurrence_counts[(kind, value)] = occurrence_index + 1

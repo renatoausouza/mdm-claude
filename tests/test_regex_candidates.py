@@ -1,7 +1,7 @@
 import fitz
 
 from mdm.pdf_extraction import extract_pdf_pages
-from mdm.regex_candidates import find_candidates
+from mdm.regex_candidates import find_candidates, find_rejected_tax_id_candidates
 
 
 def _make_pdf(text: str) -> bytes:
@@ -67,6 +67,50 @@ def test_checksum_invalid_cnpj_shaped_number_is_rejected() -> None:
     candidates = find_candidates(pages)
 
     assert [c for c in candidates if c.kind == "cnpj"] == []
+
+
+def test_rejected_finder_returns_the_invalid_cnpj_find_candidates_drops() -> None:
+    pdf_bytes = _make_pdf("Pedido No: 12.345.678/0001-99")
+    pages = extract_pdf_pages(pdf_bytes)
+
+    assert find_candidates(pages) == []
+
+    rejected = find_rejected_tax_id_candidates(pages)
+    assert len(rejected) == 1
+    assert rejected[0].kind == "cnpj"
+    assert rejected[0].value == "12.345.678/0001-99"
+
+
+def test_rejected_finder_returns_the_invalid_cpf_find_candidates_drops() -> None:
+    pdf_bytes = _make_pdf("Pedido No: 111.444.777-99")
+    pages = extract_pdf_pages(pdf_bytes)
+
+    assert find_candidates(pages) == []
+
+    rejected = find_rejected_tax_id_candidates(pages)
+    assert len(rejected) == 1
+    assert rejected[0].kind == "cpf"
+    assert rejected[0].value == "111.444.777-99"
+
+
+def test_rejected_finder_never_returns_a_value_find_candidates_already_accepted() -> None:
+    # The two finders must be strict complements for cnpj/cpf — a value
+    # can never show up as both "found" and "rejected".
+    pdf_bytes = _make_pdf("Fornecedor CNPJ: 11.223.344/0001-86")
+    pages = extract_pdf_pages(pdf_bytes)
+
+    assert len(find_candidates(pages)) == 1
+    assert find_rejected_tax_id_candidates(pages) == []
+
+
+def test_rejected_finder_ignores_email_and_phone_kinds() -> None:
+    # Only cnpj/cpf have a validity concept here — email/phone were never
+    # checksum-filtered by find_candidates in the first place, so there's
+    # nothing for this finder to "reject" for those kinds.
+    pdf_bytes = _make_pdf("Email: contato@acme.com Fone: (11) 98765-4321")
+    pages = extract_pdf_pages(pdf_bytes)
+
+    assert find_rejected_tax_id_candidates(pages) == []
 
 
 def test_repeated_value_on_one_page_gets_its_own_bbox_each() -> None:

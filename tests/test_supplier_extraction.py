@@ -95,3 +95,58 @@ def test_no_role_labels_falls_back_to_positional_supplier() -> None:
     assert result.parties[0].role == "supplier"
     assert result.parties[0].role_evidence is not None
     assert result.parties[0].role_evidence.inferred is True
+
+
+def test_valid_cnpj_under_a_dados_do_emitente_header_is_extracted() -> None:
+    # Regression test for the real bug report: a genuinely valid CNPJ
+    # under a "Dados do Emitente" section header (standard NFe/DANFE
+    # phrasing) must populate cnpj, not silently end up None because the
+    # header wasn't recognized as a role label.
+    pdf_bytes = _make_pdf("Dados do Emitente\nRazao Social\nCNPJ: 11.223.344/0001-86")
+    fake = FakeClient({"legal_name": "ACME Ltda", "email": None, "telephone": None, "address": None})
+
+    result = run_supplier_extraction(pdf_bytes, llm_client=fake)
+
+    assert result.cnpj is not None
+    assert result.cnpj.value == "11.223.344/0001-86"
+    assert result.rejected_tax_ids == []
+
+
+def test_checksum_invalid_supplier_cnpj_is_reported_as_rejected_not_silently_missing() -> None:
+    # The bug report this guards against: a reviewer sees cnpj=None and
+    # assumes extraction just missed it, when really a CNPJ-shaped value
+    # WAS found right next to "Fornecedor" but failed check-digit
+    # validation — a materially different, and more actionable, situation.
+    pdf_bytes = _make_pdf("Fornecedor CNPJ: 99.888.777/0001-66")
+    fake = FakeClient({"legal_name": "Suprimentos Office Papelaria EIRELI", "email": None, "telephone": None, "address": None})
+
+    result = run_supplier_extraction(pdf_bytes, llm_client=fake)
+
+    assert result.cnpj is None
+    assert result.parties == []
+    assert len(result.rejected_tax_ids) == 1
+    assert result.rejected_tax_ids[0].value == "99.888.777/0001-66"
+    assert result.rejected_tax_ids[0].kind == "cnpj"
+    assert result.rejected_tax_ids[0].role == "supplier"
+    assert result.rejected_tax_ids[0].role_evidence is not None
+    assert result.rejected_tax_ids[0].role_evidence.inferred is False
+
+
+def test_valid_and_rejected_cnpj_on_the_same_document_are_kept_separate() -> None:
+    # A page can genuinely have both: one party with a real, valid CNPJ,
+    # and a second CNPJ-shaped value elsewhere that fails validation. The
+    # valid one must still win the `cnpj` field; the invalid one must
+    # never leak into it, only into rejected_tax_ids.
+    pdf_bytes = _make_pdf(
+        "Fornecedor CNPJ: 11.223.344/0001-86\n"
+        "Transportador CNPJ: 99.888.777/0001-66"
+    )
+    fake = FakeClient({"legal_name": "ACME Ltda", "email": None, "telephone": None, "address": None})
+
+    result = run_supplier_extraction(pdf_bytes, llm_client=fake)
+
+    assert result.cnpj is not None
+    assert result.cnpj.value == "11.223.344/0001-86"
+    assert len(result.rejected_tax_ids) == 1
+    assert result.rejected_tax_ids[0].value == "99.888.777/0001-66"
+    assert result.rejected_tax_ids[0].role == "transporter"

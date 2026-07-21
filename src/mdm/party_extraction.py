@@ -5,7 +5,7 @@ tax ID and doesn't use this module."""
 
 import re
 
-from mdm.extraction_schema import FieldValue, PartyInfo, Provenance, RoleEvidenceInfo
+from mdm.extraction_schema import FieldValue, PartyInfo, Provenance, RejectedTaxId, RoleEvidenceInfo
 from mdm.role_tagging import TaggedParty
 
 REGEX_CONFIDENCE = 0.95
@@ -24,3 +24,11 @@ def party_to_info(party: TaggedParty) -> PartyInfo:
     )
     evidence = RoleEvidenceInfo.model_validate(party.role_evidence) if party.role_evidence is not None else None
     return PartyInfo(tax_id=tax_id_field, role=party.role, role_evidence=evidence)
+
+
+def rejected_party_to_info(party: TaggedParty) -> RejectedTaxId:
+    """Same TaggedParty -> API-shape conversion as party_to_info, for a
+    candidate that role_tagging.tag_roles tagged but that never passed
+    checksum validation (see RejectedTaxId's own docstring)."""
+    evidence = RoleEvidenceInfo.model_validate(party.role_evidence) if party.role_evidence is not None else None
+    return RejectedTaxId(value=party.tax_id.value, kind=party.tax_id.kind, role=party.role, role_evidence=evidence)

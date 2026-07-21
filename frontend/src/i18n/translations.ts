@@ -157,6 +157,9 @@ export const translations: Record<Lang, Record<string, string>> = {
     'review.noMatches': 'No matches.',
     'review.link': 'Link',
     'review.approverOnlyHint': 'Only approver accounts can approve, reject, or request more information.',
+    'review.rejectedTaxIdIntro':
+      "A tax ID-shaped value was found in this document, but it didn't pass validation — so it was not used. This is not a missed extraction:",
+    'review.rejectedTaxIdItem': '{role}: {value} (failed CNPJ/CPF check-digit validation)',
 
     // ---- duplicate resolve page ----
     'duplicate.title': 'Duplicate review',
@@ -457,6 +460,9 @@ export const translations: Record<Lang, Record<string, string>> = {
     'review.noMatches': 'Nenhum resultado.',
     'review.link': 'Vincular',
     'review.approverOnlyHint': 'Somente contas de aprovador podem aprovar, rejeitar ou solicitar mais informações.',
+    'review.rejectedTaxIdIntro':
+      'Um valor com formato de CNPJ/CPF foi encontrado neste documento, mas não passou na validação — por isso não foi usado. Isso não é uma falha de extração:',
+    'review.rejectedTaxIdItem': '{role}: {value} (falhou na validação do dígito verificador de CNPJ/CPF)',
 
     // ---- duplicate resolve page ----
     'duplicate.title': 'Revisão de duplicidade',

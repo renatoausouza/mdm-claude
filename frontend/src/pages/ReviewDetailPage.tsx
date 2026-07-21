@@ -14,6 +14,7 @@ import {
   type JobResultResponse,
   type MasterRecordSearchResult,
   type PartyInfo,
+  type RejectedTaxId,
 } from '../types/api'
 
 const PRODUCT_EVIDENCE_FIELDS = ['price', 'quantity', 'discount']
@@ -177,6 +178,22 @@ export function ReviewDetailPage() {
             </p>
           )}
         </section>
+      )}
+
+      {Array.isArray(result.rejected_tax_ids) && (result.rejected_tax_ids as RejectedTaxId[]).length > 0 && (
+        <div className="banner banner-info">
+          <p>{t('review.rejectedTaxIdIntro')}</p>
+          <ul>
+            {(result.rejected_tax_ids as RejectedTaxId[]).map((rejected, index) => (
+              <li key={index}>
+                {t('review.rejectedTaxIdItem', {
+                  role: t(`partyRole.${rejected.role}`),
+                  value: rejected.value,
+                })}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       <section className="candidate-fields">
