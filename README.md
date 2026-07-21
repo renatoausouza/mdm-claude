@@ -26,7 +26,36 @@ docs/          solution brief, ADRs, agent-facing docs
 
 - Python 3.10+
 - Node.js + npm (for the frontend)
-- An OCI tenancy with access to Generative AI (a compartment permitted to use `generative-ai-family`) and an API signing key for a user with that access. Place the resulting config file (and its private key) at `data/oci/config` — see [src/mdm/config.py](src/mdm/config.py) for the exact env vars (`MDM_OCI_GENAI_COMPARTMENT_ID`, `MDM_OCI_GENAI_REGION`, `MDM_OCI_CONFIG_FILE`, `MDM_OCI_CONFIG_PROFILE`, `MDM_OCI_GENAI_MODEL_ID`).
+- An OCI tenancy with access to Generative AI — see [OCI Generative AI setup](#oci-generative-ai-setup) below.
+
+## OCI Generative AI setup
+
+Extraction and the chat-query feature call OCI Generative AI (Meta Llama, on-demand) instead of a local model. You need an API signing key for a user with access to `generative-ai-family` in your target compartment, and OCI Generative AI must be available in the region you choose (check the [models-by-region page](https://docs.oracle.com/en-us/iaas/Content/generative-ai/model-endpoint-regions.htm) — it's not offered in every region).
+
+1. **Generate an RSA key pair** (the private key never has to leave the host running the app):
+   ```bash
+   mkdir -p data/oci
+   openssl genrsa -out data/oci/oci_api_key.pem 2048
+   openssl rsa -pubout -in data/oci/oci_api_key.pem -out data/oci/oci_api_key_public.pem
+   chmod 600 data/oci/oci_api_key.pem
+   ```
+2. **Add the public key in the OCI Console**: profile icon (top right) → **My profile** → **API keys** → **Add API key** → **Paste public key** → paste the contents of `data/oci/oci_api_key_public.pem`. The console shows a fingerprint after you add it.
+3. **Collect four values**: your **Tenancy OCID** (profile icon → **Tenancy**), your **User OCID** (the My profile page from step 2), the **region** you're using, and the **compartment OCID** you want Generative AI usage scoped to (the tenancy OCID works if you don't have a dedicated compartment).
+4. **Write `data/oci/config`**:
+   ```ini
+   [DEFAULT]
+   user=<your user OCID>
+   fingerprint=<fingerprint from step 2>
+   tenancy=<your tenancy OCID>
+   region=<your region, e.g. sa-saopaulo-1>
+   key_file=<absolute path to data/oci/oci_api_key.pem>
+   ```
+5. **Confirm an IAM policy grants access**, e.g.:
+   ```
+   Allow group <your-group> to use generative-ai-family in compartment <your-compartment>
+   ```
+6. **Set the app's compartment/region env vars** — see [src/mdm/config.py](src/mdm/config.py) for the full list (`MDM_OCI_GENAI_COMPARTMENT_ID`, `MDM_OCI_GENAI_REGION`, `MDM_OCI_CONFIG_FILE`, `MDM_OCI_CONFIG_PROFILE`, `MDM_OCI_GENAI_MODEL_ID`). In a systemd deployment, pass `OCI_GENAI_COMPARTMENT_ID`/`OCI_GENAI_REGION` to `deploy/install.sh` and it templates them into the unit file (see Deployment below).
+7. **Verify**: start the app and hit `GET /ready` — it calls OCI Generative AI's `list_models` (a control-plane read, not a billed completion) to confirm the config, key, and IAM policy all actually work together.
 
 ## Backend setup
 
