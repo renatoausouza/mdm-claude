@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from mdm import llm_extraction
 from mdm.db import ApprovalEvent, MasterRecord, get_session
-from mdm.llm_extraction import OllamaExtractionClient, extract_supplier_fields
+from mdm.llm_extraction import OciGenAiExtractionClient, extract_supplier_fields
 from mdm.main import app
 
 
@@ -89,7 +89,7 @@ def test_document_with_embedded_approval_instructions_only_produces_a_candidate(
     approved MasterRecord."""
     monkeypatch.setattr(
         llm_extraction,
-        "OllamaExtractionClient",
+        "OciGenAiExtractionClient",
         lambda: InjectingFakeClient(
             {
                 "legal_name": "Injected Corp Ltda",
@@ -131,35 +131,45 @@ def test_document_with_embedded_approval_instructions_only_produces_a_candidate(
         assert session.query(ApprovalEvent).count() == 0
 
 
-def test_ollama_extraction_call_has_no_tool_calling_capability(monkeypatch) -> None:
+def test_oci_genai_extraction_call_has_no_tool_calling_capability(monkeypatch) -> None:
     """FR-17: the LLM extraction call must have no tool-calling/function-
     calling capability wired to it anywhere — verified by inspecting the
-    actual HTTP payload sent to Ollama, not just by reading the source."""
+    actual ChatDetails/GenericChatRequest object sent to OCI Generative AI,
+    not just by reading the source."""
+    monkeypatch.setenv("MDM_OCI_GENAI_COMPARTMENT_ID", "ocid1.compartment.oc1..test")
+    monkeypatch.setenv("MDM_OCI_GENAI_REGION", "us-chicago-1")
+    monkeypatch.setattr(llm_extraction, "load_oci_sdk_config", lambda: {})
     captured: dict = {}
 
-    class FakeResponse:
-        status_code = 200
+    class FakeChatResponseData:
+        class chat_response:  # noqa: N801 - mirrors the real oci SDK's response shape
+            choices = [
+                type(
+                    "Choice",
+                    (),
+                    {"message": type("Message", (), {"content": [type("C", (), {"text": "{}"})()]})()},
+                )()
+            ]
 
-        def raise_for_status(self) -> None:
+    class FakeApiResponse:
+        data = FakeChatResponseData()
+
+    class FakeInferenceClient:
+        def __init__(self, **kwargs: object) -> None:
             pass
 
-        def json(self) -> dict:
-            return {"response": '{"legal_name": null, "email": null, "telephone": null, "address": null}'}
+        def chat(self, chat_details: object) -> FakeApiResponse:
+            captured["chat_details"] = chat_details
+            return FakeApiResponse()
 
-    def fake_post(url: str, json: dict, timeout: float) -> FakeResponse:
-        captured["url"] = url
-        captured["payload"] = json
-        return FakeResponse()
+    monkeypatch.setattr(llm_extraction, "GenerativeAiInferenceClient", FakeInferenceClient)
 
-    monkeypatch.setattr("httpx.post", fake_post)
+    OciGenAiExtractionClient().generate_json("some prompt")
 
-    OllamaExtractionClient().generate_json("some prompt")
-
-    assert captured["url"].endswith("/api/generate")  # not a tool/function-enabled chat endpoint
-    payload = captured["payload"]
-    assert "tools" not in payload
-    assert "functions" not in payload
-    assert "tool_choice" not in payload
-    # format=json constrains output to structured JSON text, not agentic
-    # tool invocation.
-    assert payload.get("format") == "json"
+    chat_request = captured["chat_details"].chat_request
+    assert not chat_request.tools
+    assert not chat_request.tool_choice
+    assert not chat_request.is_parallel_tool_calls
+    # JsonObjectResponseFormat constrains output to structured JSON text,
+    # not agentic tool invocation.
+    assert chat_request.response_format.type == "JSON_OBJECT"

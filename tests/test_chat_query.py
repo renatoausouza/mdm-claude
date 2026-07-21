@@ -156,7 +156,7 @@ def test_chat_query_returns_matching_records(monkeypatch) -> None:
         "telephone": None,
         "address": "Rua X, Belo Horizonte, Minas Gerais",
     }
-    monkeypatch.setattr(llm_extraction, "OllamaExtractionClient", lambda: FakeExtractionClient(fields))
+    monkeypatch.setattr(llm_extraction, "OciGenAiExtractionClient", lambda: FakeExtractionClient(fields))
     pdf_bytes = _make_pdf_bytes("Destinatario: Cliente Minas\nDestinatario CPF: 111.444.777-35")
     upload = client.post(
         "/documents",
@@ -170,7 +170,7 @@ def test_chat_query_returns_matching_records(monkeypatch) -> None:
 
     monkeypatch.setattr(
         chat_query,
-        "OllamaExtractionClient",
+        "OciGenAiExtractionClient",
         lambda: FakeChatClient({"domain": "client", "contains": "Minas Gerais", "limit": 5}),
     )
 
@@ -192,7 +192,7 @@ def test_chat_query_reports_not_understood_without_executing_anything(monkeypatc
     approver_token = _login_approver(client, admin_token, "chat-garbage-approver")
 
     monkeypatch.setattr(
-        chat_query, "OllamaExtractionClient", lambda: FakeChatClient({"domain": "not-a-real-domain"})
+        chat_query, "OciGenAiExtractionClient", lambda: FakeChatClient({"domain": "not-a-real-domain"})
     )
 
     response = client.post(
@@ -223,7 +223,7 @@ def test_chat_query_allows_admin(monkeypatch) -> None:
     client = TestClient(app)
     admin_token = _bootstrap_admin(client)
     monkeypatch.setattr(
-        chat_query, "OllamaExtractionClient", lambda: FakeChatClient({"domain": "client", "contains": "x", "limit": 5})
+        chat_query, "OciGenAiExtractionClient", lambda: FakeChatClient({"domain": "client", "contains": "x", "limit": 5})
     )
 
     response = client.post(

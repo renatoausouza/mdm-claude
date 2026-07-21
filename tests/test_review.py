@@ -89,7 +89,7 @@ def _get_enrollment_scoped_token(client: TestClient, admin_token: str, username:
 def _upload_pending_review_job(client: TestClient, monkeypatch, submitter_token: str) -> str:
     monkeypatch.setattr(
         llm_extraction,
-        "OllamaExtractionClient",
+        "OciGenAiExtractionClient",
         lambda: FakeExtractionClient(
             {"legal_name": "ACME Ltda", "email": "contato@acme.com", "telephone": None, "address": None}
         ),

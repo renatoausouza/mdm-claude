@@ -1,40 +1,34 @@
-import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from mdm import config
-from mdm.main import app, get_ollama_client
-from mdm.ollama_client import OllamaClient
+from mdm.main import app, get_oci_genai_client
+from mdm.oci_genai_client import OciGenAiClient
 
 
-def _ollama_reachable() -> bool:
-    try:
-        httpx.get(f"{config.get_ollama_base_url()}/api/tags", timeout=2.0)
-        return True
-    except httpx.HTTPError:
-        return False
+def _oci_genai_reachable() -> bool:
+    return OciGenAiClient().check()
 
 
-@pytest.mark.skipif(not _ollama_reachable(), reason="no local Ollama server reachable")
-def test_ready_returns_200_when_ollama_responds() -> None:
+@pytest.mark.skipif(not _oci_genai_reachable(), reason="no reachable/configured OCI Generative AI credentials")
+def test_ready_returns_200_when_oci_genai_responds() -> None:
     client = TestClient(app)
     response = client.get("/ready")
     assert response.status_code == 200
 
 
-class BrokenOllamaClient(OllamaClient):
+class BrokenOciGenAiClient(OciGenAiClient):
     def check(self) -> bool:
         return False
 
 
 @pytest.fixture
-def broken_ollama_override():
-    app.dependency_overrides[get_ollama_client] = lambda: BrokenOllamaClient()
+def broken_oci_genai_override():
+    app.dependency_overrides[get_oci_genai_client] = lambda: BrokenOciGenAiClient()
     yield
     app.dependency_overrides.clear()
 
 
-def test_ready_returns_503_when_ollama_unavailable(broken_ollama_override: None) -> None:
+def test_ready_returns_503_when_oci_genai_unavailable(broken_oci_genai_override: None) -> None:
     client = TestClient(app)
     response = client.get("/ready")
     assert response.status_code == 503

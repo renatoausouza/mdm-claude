@@ -24,7 +24,7 @@ from mdm.auth import get_current_user
 from mdm.db import User, get_session
 from mdm.domains import DOMAIN_SPECS
 from mdm.duplicates import MasterRecordSearchResult, search_records
-from mdm.llm_extraction import OllamaExtractionClient
+from mdm.llm_extraction import OciGenAiExtractionClient
 from mdm.review import _require_approver_or_admin
 
 logger = logging.getLogger(__name__)
@@ -65,8 +65,8 @@ def _build_prompt(question: str) -> str:
     )
 
 
-def propose_query_filter(question: str, client: OllamaExtractionClient | None = None) -> QueryFilter | None:
-    client = client or OllamaExtractionClient()
+def propose_query_filter(question: str, client: OciGenAiExtractionClient | None = None) -> QueryFilter | None:
+    client = client or OciGenAiExtractionClient()
     prompt = _build_prompt(question)
 
     try:

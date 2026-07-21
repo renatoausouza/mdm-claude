@@ -20,29 +20,50 @@ def get_host() -> str:
     return os.environ.get("MDM_HOST", "0.0.0.0")
 
 
-def get_ollama_base_url() -> str:
-    return os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+def get_oci_config_file_path() -> str | None:
+    # None lets the OCI SDK fall back to its own default (~/.oci/config) —
+    # only set MDM_OCI_CONFIG_FILE to point at a non-standard location.
+    return os.environ.get("MDM_OCI_CONFIG_FILE")
 
 
-def get_ollama_ready_model() -> str:
-    return os.environ.get("OLLAMA_READY_MODEL", "tinyllama")
+def get_oci_config_profile() -> str:
+    return os.environ.get("MDM_OCI_CONFIG_PROFILE", "DEFAULT")
 
 
-def get_ollama_extraction_model() -> str:
-    # Distinct from the readiness-check model: extraction needs a model
-    # actually capable of structured JSON output, not just a cheap liveness
-    # ping — tinyllama is too weak for this.
-    return os.environ.get("OLLAMA_EXTRACTION_MODEL", "llama3")
+def get_oci_genai_compartment_id() -> str:
+    value = os.environ.get("MDM_OCI_GENAI_COMPARTMENT_ID")
+    if not value:
+        raise RuntimeError("MDM_OCI_GENAI_COMPARTMENT_ID must be set to call OCI Generative AI")
+    return value
 
 
-def get_ollama_extraction_timeout_seconds() -> float:
-    # deploy/nginx-mdm.conf grants POST /documents up to 300s specifically
-    # because CPU-only local inference on the target VM was observed
-    # running 50-90s even on ordinary documents — a longer/denser real
-    # document (a full DANFE's text) can legitimately take longer still.
-    # Default leaves nginx's budget usable rather than the extraction call
-    # giving up well before nginx would have.
-    return float(os.environ.get("MDM_OLLAMA_EXTRACTION_TIMEOUT_SECONDS", "280"))
+def get_oci_genai_model_id() -> str:
+    # meta.llama-3.3-70b-instruct: current (as of writing) on-demand Meta
+    # Llama model in OCI Generative AI — closest behavioral match to the
+    # llama3 model this replaces. Override if your tenancy/region offers a
+    # different on-demand model, or the catalog rotates this one out.
+    return os.environ.get("MDM_OCI_GENAI_MODEL_ID", "meta.llama-3.3-70b-instruct")
+
+
+def get_oci_genai_service_endpoint() -> str:
+    explicit = os.environ.get("MDM_OCI_GENAI_SERVICE_ENDPOINT")
+    if explicit:
+        return explicit
+    region = os.environ.get("MDM_OCI_GENAI_REGION")
+    if not region:
+        raise RuntimeError(
+            "Set MDM_OCI_GENAI_SERVICE_ENDPOINT, or MDM_OCI_GENAI_REGION so the endpoint can be derived from it"
+        )
+    return f"https://inference.generativeai.{region}.oci.oraclecloud.com"
+
+
+def get_oci_genai_extraction_timeout_seconds() -> float:
+    # deploy/nginx-mdm.conf grants POST /documents up to 300s. That budget
+    # was sized for CPU-only local inference (50-90s observed); a managed
+    # cloud model call is expected to be far faster, but the ceiling is
+    # left high enough to still cover network/service variance without
+    # nginx giving up first.
+    return float(os.environ.get("MDM_OCI_GENAI_EXTRACTION_TIMEOUT_SECONDS", "120"))
 
 
 def get_data_dir() -> str:

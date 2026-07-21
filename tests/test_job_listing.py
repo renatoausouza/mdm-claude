@@ -149,7 +149,7 @@ def test_job_summary_includes_uploader_and_pending_duplicate_case(monkeypatch) -
 
     monkeypatch.setattr(
         llm_extraction,
-        "OllamaExtractionClient",
+        "OciGenAiExtractionClient",
         lambda: FakeExtractionClient(
             {"legal_name": "ACME Ltda", "email": None, "telephone": None, "address": None}
         ),

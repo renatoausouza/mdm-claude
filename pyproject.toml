@@ -12,6 +12,7 @@ dependencies = [
     "argon2-cffi",
     "pyotp",
     "pymupdf",
+    "oci",
 ]
 
 [project.optional-dependencies]
@@ -35,4 +36,8 @@ mypy_path = "src"
 
 [[tool.mypy.overrides]]
 module = "fitz"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "oci.*"
 ignore_missing_imports = true

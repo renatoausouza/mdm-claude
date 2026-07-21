@@ -92,7 +92,7 @@ def _register_supplier(client: TestClient, monkeypatch, submitter_token: str, ap
         "telephone": "(31) 91111-1111",
         "address": "Rua Original, 1",
     }
-    monkeypatch.setattr(llm_extraction, "OllamaExtractionClient", lambda: FakeExtractionClient(fields))
+    monkeypatch.setattr(llm_extraction, "OciGenAiExtractionClient", lambda: FakeExtractionClient(fields))
     pdf_bytes = _make_pdf_bytes(f"Emitente: Fornecedor Original\nEmitente CNPJ: {cnpj}")
     upload = client.post(
         "/documents",
@@ -116,7 +116,7 @@ def _register_client(client: TestClient, monkeypatch, submitter_token: str, appr
         "telephone": "(31) 90000-0000",
         "address": "Rua Cliente, 1",
     }
-    monkeypatch.setattr(llm_extraction, "OllamaExtractionClient", lambda: FakeExtractionClient(fields))
+    monkeypatch.setattr(llm_extraction, "OciGenAiExtractionClient", lambda: FakeExtractionClient(fields))
     pdf_bytes = _make_pdf_bytes("Destinatario: Cliente Original\nDestinatario CPF: 111.444.777-35")
     upload = client.post(
         "/documents",

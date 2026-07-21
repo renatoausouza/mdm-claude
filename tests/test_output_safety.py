@@ -66,7 +66,7 @@ def _uploader_headers(client: TestClient, username: str = "uploader") -> dict[st
 def _upload_with_malicious_content(client: TestClient, monkeypatch, headers: dict[str, str]) -> str:
     monkeypatch.setattr(
         llm_extraction,
-        "OllamaExtractionClient",
+        "OciGenAiExtractionClient",
         lambda: FakeExtractionClient(
             {
                 "legal_name": MALICIOUS_LEGAL_NAME,

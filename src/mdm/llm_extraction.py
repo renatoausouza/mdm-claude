@@ -2,9 +2,20 @@ import json
 import logging
 from dataclasses import dataclass
 
-import httpx
+import oci.exceptions
+from oci.generative_ai_inference import GenerativeAiInferenceClient
+from oci.generative_ai_inference.models import (
+    ChatDetails,
+    GenericChatRequest,
+    JsonObjectResponseFormat,
+    OnDemandServingMode,
+    TextContent,
+    UserMessage,
+)
+from oci.retry import NoneRetryStrategy
 
 from mdm import config
+from mdm.oci_genai_client import load_oci_sdk_config
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +23,11 @@ SUPPLIER_FIELDS = ["legal_name", "email", "telephone", "address"]
 
 HIGH_CONFIDENCE = 0.9
 LOW_CONFIDENCE = 0.3
+
+# Structured extraction responses are a handful of short field values, not
+# free-form prose — generous enough to never truncate a real answer without
+# inflating latency/cost chasing an unused ceiling.
+_MAX_OUTPUT_TOKENS = 600
 
 
 @dataclass
@@ -21,21 +37,29 @@ class LlmFieldResult:
     found_verbatim_in_source: bool
 
 
-class OllamaExtractionClient:
+class OciGenAiExtractionClient:
     def generate_json(self, prompt: str) -> str:
-        response = httpx.post(
-            f"{config.get_ollama_base_url()}/api/generate",
-            json={
-                "model": config.get_ollama_extraction_model(),
-                "prompt": prompt,
-                "stream": False,
-                "format": "json",
-                "options": {"temperature": 0.1},
-            },
-            timeout=config.get_ollama_extraction_timeout_seconds(),
+        oci_config = load_oci_sdk_config()
+        client = GenerativeAiInferenceClient(
+            config=oci_config,
+            service_endpoint=config.get_oci_genai_service_endpoint(),
+            retry_strategy=NoneRetryStrategy(),
+            timeout=config.get_oci_genai_extraction_timeout_seconds(),
         )
-        response.raise_for_status()
-        result: str = response.json()["response"]
+        chat_details = ChatDetails(
+            compartment_id=config.get_oci_genai_compartment_id(),
+            serving_mode=OnDemandServingMode(model_id=config.get_oci_genai_model_id()),
+            chat_request=GenericChatRequest(
+                api_format="GENERIC",
+                messages=[UserMessage(content=[TextContent(text=prompt)])],
+                max_tokens=_MAX_OUTPUT_TOKENS,
+                temperature=0.1,
+                response_format=JsonObjectResponseFormat(),
+            ),
+        )
+        response = client.chat(chat_details)
+        choices = response.data.chat_response.choices
+        result: str = choices[0].message.content[0].text
         return result
 
 
@@ -66,20 +90,20 @@ def extract_fields(
     tax_id_anchor: str | None,
     party_label: str,
     fields: list[str],
-    client: OllamaExtractionClient | None = None,
+    client: OciGenAiExtractionClient | None = None,
     extra_instructions: str = "",
 ) -> dict[str, LlmFieldResult | None]:
     """Domain-generic LLM extraction — extract_supplier_fields/
     extract_client_fields/extract_product_fields are thin wrappers around
     this with their own field list and prompt wording (#4, #8, #10).
     `tax_id_anchor` is None for domains with no tax ID (Product)."""
-    client = client or OllamaExtractionClient()
+    client = client or OciGenAiExtractionClient()
     prompt = _build_prompt(document_text, tax_id_anchor, party_label, fields, extra_instructions)
 
     try:
         raw = client.generate_json(prompt)
         parsed = json.loads(raw)
-    except (httpx.HTTPError, json.JSONDecodeError, KeyError) as exc:
+    except (oci.exceptions.ServiceError, oci.exceptions.RequestException, json.JSONDecodeError, IndexError) as exc:
         logger.warning("LLM extraction call failed, treating all fields as not found: %s", exc)
         parsed = {}
 
@@ -107,7 +131,7 @@ def extract_fields(
 def extract_supplier_fields(
     document_text: str,
     cnpj_anchor: str | None,
-    client: OllamaExtractionClient | None = None,
+    client: OciGenAiExtractionClient | None = None,
 ) -> dict[str, LlmFieldResult | None]:
     return extract_fields(document_text, cnpj_anchor, "supplier", SUPPLIER_FIELDS, client)
 
@@ -118,7 +142,7 @@ CLIENT_FIELDS = ["name", "email", "telephone", "address"]
 def extract_client_fields(
     document_text: str,
     tax_id_anchor: str | None,
-    client: OllamaExtractionClient | None = None,
+    client: OciGenAiExtractionClient | None = None,
 ) -> dict[str, LlmFieldResult | None]:
     return extract_fields(document_text, tax_id_anchor, "client", CLIENT_FIELDS, client)
 
@@ -143,7 +167,7 @@ _PRODUCT_EXTRA_INSTRUCTIONS = (
 
 def extract_product_fields(
     document_text: str,
-    client: OllamaExtractionClient | None = None,
+    client: OciGenAiExtractionClient | None = None,
 ) -> dict[str, LlmFieldResult | None]:
     return extract_fields(
         document_text, None, "product", PRODUCT_FIELDS, client, extra_instructions=_PRODUCT_EXTRA_INSTRUCTIONS

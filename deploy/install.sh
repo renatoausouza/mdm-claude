@@ -16,6 +16,12 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVICE_USER="mdm-svc"
 MDM_PORT="${MDM_PORT:-8000}"
+# OCI Generative AI compartment/region — required for extraction/chat to
+# actually work, but left unset-able here so install.sh doesn't hard-fail
+# on a fresh checkout; the app itself raises a clear error on first use if
+# still unset once the service is up.
+OCI_GENAI_COMPARTMENT_ID="${OCI_GENAI_COMPARTMENT_ID:-}"
+OCI_GENAI_REGION="${OCI_GENAI_REGION:-}"
 
 if ! id "$SERVICE_USER" >/dev/null 2>&1; then
   useradd --system --no-create-home --shell /usr/sbin/nologin "$SERVICE_USER"
@@ -49,7 +55,7 @@ setfacl -R -d -m "u:${SERVICE_USER}:rX" "$REPO_DIR"
 # grant above. The systemd unit's ReadWritePaths= lifts the ProtectSystem=
 # strict mount restriction for this same path; this ACL is what actually
 # grants the POSIX permission underneath it.
-mkdir -p "$REPO_DIR/data/documents"
+mkdir -p "$REPO_DIR/data/documents" "$REPO_DIR/data/oci"
 setfacl -R -m "u:${SERVICE_USER}:rwX" "$REPO_DIR/data"
 setfacl -R -d -m "u:${SERVICE_USER}:rwX" "$REPO_DIR/data"
 
@@ -82,6 +88,8 @@ setfacl -R -d -m "u:www-data:rX" "$REPO_DIR/frontend/dist"
 # assumptions, so it works regardless of where the repo is cloned or which
 # port is configured.
 sed -e "s#__REPO_DIR__#${REPO_DIR}#g" -e "s#__MDM_PORT__#${MDM_PORT}#g" \
+  -e "s#__OCI_GENAI_COMPARTMENT_ID__#${OCI_GENAI_COMPARTMENT_ID}#g" \
+  -e "s#__OCI_GENAI_REGION__#${OCI_GENAI_REGION}#g" \
   "$REPO_DIR/deploy/mdm.service" > /etc/systemd/system/mdm.service
 chmod 644 /etc/systemd/system/mdm.service
 sed -e "s#__REPO_DIR__#${REPO_DIR}#g" \
@@ -115,3 +123,13 @@ nginx -t
 systemctl reload nginx || systemctl restart nginx
 
 echo "Done. Verify with: systemctl status mdm.service mdm-purge.timer nginx"
+if [ ! -s "$REPO_DIR/data/oci/config" ]; then
+  echo "NOTE: $REPO_DIR/data/oci/config is missing/empty — extraction and" \
+       "the chat feature will fail until a real OCI API-key config (and its" \
+       "private key file) are placed there. See README.md."
+fi
+if [ -z "$OCI_GENAI_COMPARTMENT_ID" ] || [ -z "$OCI_GENAI_REGION" ]; then
+  echo "NOTE: OCI_GENAI_COMPARTMENT_ID and/or OCI_GENAI_REGION were not set" \
+       "when install.sh ran — edit /etc/systemd/system/mdm.service and" \
+       "run 'systemctl daemon-reload && systemctl restart mdm.service'."
+fi

@@ -24,7 +24,7 @@ Business documents (invoices, purchase orders, correspondence, attachments) arri
 | **Approver / Data Steward** | Reviews extraction candidates and duplicate-match cases; approves, rejects, or requests correction. | Requires MFA (D13). Cannot approve their own supplier submissions or sensitive-field supplier updates (D6) — must be a different user than the submitter for those cases. |
 | **System Owner / Admin** | User/role management, retention configuration, purge-job oversight, deployment. | Interim point of contact for privacy matters until a DPO is formally designated (see D8 — this is a stopgap, not a substitute). |
 | **Auditor (read-only)** | Inspects audit logs, evidence, and lineage. | May not need a dedicated UI in MVP; read access to logs/audit trail satisfies this. |
-| **The LLM (local Ollama model)** | Produces candidate structured text only. | **Not an actor with authority.** Zero tool-calling, zero autonomous state changes, ever (D14). Treated as an untrusted-input processor, not a decision-maker. |
+| **The LLM (OCI Generative AI, Meta Llama)** | Produces candidate structured text only. | **Not an actor with authority.** Zero tool-calling, zero autonomous state changes, ever (D14). Treated as an untrusted-input processor, not a decision-maker. Runs as a managed cloud call within the operator's own OCI tenancy/compartment, not a local model — see NFR-07. |
 
 ---
 
@@ -87,12 +87,12 @@ Business documents (invoices, purchase orders, correspondence, attachments) arri
 | ID | Requirement | Target | Status |
 |---|---|---|---|
 | NFR-01 | Extraction turnaround (upload → scored, pending review) for a typical single-page PDF | ≤ 60s p95 on the target OCI VM spec | ASSUMED DEFAULT |
-| NFR-02 | Concurrent extraction jobs | Bounded by a queue; local Ollama inference is treated as a serialized/limited-concurrency resource, not infinitely parallel | ASSUMED DEFAULT |
+| NFR-02 | Concurrent extraction jobs | Bounded by a queue; OCI Generative AI inference is treated as a rate/quota-limited resource, not infinitely parallel | ASSUMED DEFAULT |
 | NFR-03 | Availability of the service during business hours | 99% (single-VM, no HA in MVP — explicitly not a redundant deployment) | ASSUMED DEFAULT |
 | NFR-04 | Document/DB encryption at rest | AES-256 or OS-native disk encryption + application-layer encryption for the document store | ASSUMED DEFAULT |
 | NFR-05 | TLS in transit | TLS 1.2+ terminated at a reverse proxy in front of the fixed application port | ASSUMED DEFAULT — see §17 (port-selection challenge) |
 | NFR-06 | No PII in logs | Structured logs must redact/omit CPF, CNPJ, email, phone, address values; log only record IDs and event types | ASSUMED DEFAULT, must be enforced by test (§18) |
-| NFR-07 | No outbound network calls carrying PII | Verified allowlist of egress (none expected beyond OS package updates); Ollama and all model calls stay loopback/local | ASSUMED DEFAULT — needs explicit verification once code exists (see §12) |
+| NFR-07 | No outbound network calls carrying PII to a third party outside the OCI tenancy | **Superseded** — the original design ran extraction against a fully local Ollama model (no egress at all). Extraction and the chat feature (#21) now call OCI Generative AI, so document text and extracted fields do leave the host, over TLS, to a regional OCI GenAI endpoint within the same tenancy/compartment. No PII goes to any party outside that tenancy. Verified allowlist of egress otherwise unchanged (none expected beyond OS package updates and the OCI GenAI endpoint). | Design changed post-MVP; still needs an explicit egress-allowlist test (§12/§18) confirming no *other* unexpected egress exists |
 | NFR-08 | False-positive duplicate-link rate | Should be ~0% given deterministic-only matching (D2/D11) by construction; measured against a labeled eval set once available | Target, not yet measured |
 | NFR-09 | Manual review rate | Expected to be high initially (D3's strict role-tagging and D11's no-SKU handling both push volume into review) — track and revisit only with real data, not pre-optimized | Expectation, not a target to minimize prematurely |
 
@@ -224,7 +224,7 @@ What this design covers: **completeness**, a corrected **compliance/validity** m
 
 **Explicitly NOT covered, and not to be claimed as covered:**
 - **Accuracy** beyond structural/format validity (a syntactically valid CNPJ is not proven to be the *correct* CNPJ — only human review and, eventually, a labeled evaluation set close this gap, NFR-08).
-- **Consistency** across sources (no cross-referencing against an external registry of valid CNPJs, for instance — offline-first precludes real-time lookups; this is a real accuracy ceiling, not a solvable gap).
+- **Consistency** across sources (no cross-referencing against an external registry of valid CNPJs, for instance — this is a deliberate scope decision, not a technical limitation of the OCI Generative AI call; this is a real accuracy ceiling, not a solvable gap).
 - **Uniqueness** beyond the deterministic-key dedup already described (D2/D11) — no fuzzy/near-duplicate detection.
 - **Timeliness** — not modeled at all yet (no SLA on how current a registered record is expected to be).
 - **Stewardship ownership** — "Approver" is a role, not a named accountable steward per data domain; not yet designed.
@@ -242,10 +242,10 @@ This system should not be described to stakeholders as "DAMA-DMBOK compliant." I
 | Stored XSS via extracted field values (e.g., a "supplier name" containing script content) | Output-encoding required everywhere extracted values render, including the raw-JSON-copy feature (FR-18). |
 | Vendor/BEC fraud via fabricated or altered supplier data | Segregation of duties (submitter ≠ approver) on supplier creation and sensitive-field updates (D6); MFA on approver accounts (D13). |
 | Compromised approver credentials | MFA required for approvers (D13); local auth must include account lockout/rate-limiting (D12). |
-| Malicious upload (malware, decompression bomb, path traversal, oversized file) | **ASSUMED DEFAULT, not yet interviewed in depth**: recommend local antivirus scan (e.g., ClamAV, since offline-first rules out cloud AV APIs), a hard max-file-size limit, size/ratio checks before decompressing any archive-like content, and storage keyed by generated UUID (never a user-supplied filename) to prevent path traversal. **Needs explicit confirmation**, not silent acceptance. |
+| Malicious upload (malware, decompression bomb, path traversal, oversized file) | **ASSUMED DEFAULT, not yet interviewed in depth**: recommend local antivirus scan (e.g., ClamAV) rather than a cloud AV API — no reason to add a second cloud dependency for raw file content beyond the OCI Generative AI call NFR-07 already accepts for extracted text — plus a hard max-file-size limit, size/ratio checks before decompressing any archive-like content, and storage keyed by generated UUID (never a user-supplied filename) to prevent path traversal. **Needs explicit confirmation**, not silent acceptance. |
 | Encrypted/password-protected PDFs | ASSUMED DEFAULT: reject with a clear error routed to manual handling, unless real documents in practice are commonly password-protected (unconfirmed) — **needs a fact-check against real document samples**. |
 | PII in logs/error traces/temp files/test fixtures | Required control (NFR-06); test fixtures must use synthetic/redacted data, never real PII (§18). |
-| Network egress carrying PII (model telemetry, package services, backups) | Must be explicitly verified once code exists — "offline-first" is a design intent, not a proof; needs an egress allowlist and a test/audit step (NFR-07). |
+| Network egress carrying PII (model calls, package services, backups) | Extraction/chat calls to OCI Generative AI are now a known, deliberate egress path within the operator's own tenancy (NFR-07) — not the risk to verify. The remaining control need is an egress allowlist/audit step confirming no *other*, unexpected egress exists (e.g., package services phoning further than OS updates, no backup path silently including raw documents). |
 | Secrets management | ASSUMED DEFAULT: environment-based secrets or a local secrets store, never committed to source control; not yet designed in detail. |
 
 ---
@@ -275,8 +275,8 @@ Minimum surface (ASSUMED DEFAULT shape, not individually interviewed):
 - **Challenge the automatic port-fallback behavior explicitly**: a production service that silently picks a different port when its default is occupied breaks health checks, firewall rules, reverse-proxy upstream config, and systemd unit expectations that all assume a fixed, known port. **Recommendation: fixed port only, fail loudly (refuse to start) if the port is unavailable, rather than silently rebinding.**
 - Reverse proxy (e.g., Nginx/Caddy) terminates TLS in front of the fixed application port; OCI security lists + host firewall (e.g., ufw/firewalld) restrict access to that proxy port only.
 - systemd hardening: dedicated non-root service user, `ProtectSystem=strict`, `NoNewPrivileges=yes`, restricted filesystem write paths (document store + DB only), resource limits.
-- Health checks: `/health` (liveness) separate from a readiness check that confirms the local Ollama model is actually loaded/responsive — a service that's "up" but can't reach its model should not report ready.
-- Model/version pinning: pin the Ollama model version and the extraction prompt version together (both already tracked per ExtractionJob in §6) so results are reproducible and a model upgrade doesn't silently change extraction behavior mid-flight.
+- Health checks: `/health` (liveness) separate from a readiness check that confirms OCI Generative AI is actually reachable/authenticated — a service that's "up" but can't reach the model should not report ready.
+- Model/version pinning: pin the OCI Generative AI model ID (`MDM_OCI_GENAI_MODEL_ID`) and the extraction prompt version together (both already tracked per ExtractionJob in §6) so results are reproducible and neither an on-demand model-catalog rotation nor a prompt change silently changes extraction behavior mid-flight.
 - Log rotation, monitoring/alerting, backup/restore, and update/rollback strategy: **ASSUMED DEFAULT**, not individually interviewed — standard practice recommended (logrotate or systemd journal limits; alert on job-queue backlog and failed-job rate; tested restore procedure, not just backup existence).
 
 ---

@@ -106,7 +106,7 @@ def _upload_client(
 ) -> dict:
     """Uploads (all 3 domains extracted per #14) and returns the mapping of
     domain -> job id from the response, without approving anything."""
-    monkeypatch.setattr(llm_extraction, "OllamaExtractionClient", lambda: FakeExtractionClient(fields))
+    monkeypatch.setattr(llm_extraction, "OciGenAiExtractionClient", lambda: FakeExtractionClient(fields))
     pdf_bytes = _make_pdf_bytes(invoice_text)
     upload = client.post(
         "/documents",

@@ -9,6 +9,14 @@ Group=mdm-svc
 WorkingDirectory=__REPO_DIR__
 Environment=MDM_HOST=127.0.0.1
 Environment=MDM_PORT=__MDM_PORT__
+# OCI Generative AI: the API-key config file (tenancy/user OCID,
+# fingerprint, private key) must be placed at this path — under data/ so
+# it's covered by the ReadWritePaths/ACL grants below, since mdm-svc has
+# no home directory (--no-create-home) for the SDK's usual ~/.oci/config
+# default. See README.md for how to populate it.
+Environment=MDM_OCI_CONFIG_FILE=__REPO_DIR__/data/oci/config
+Environment=MDM_OCI_GENAI_COMPARTMENT_ID=__OCI_GENAI_COMPARTMENT_ID__
+Environment=MDM_OCI_GENAI_REGION=__OCI_GENAI_REGION__
 ExecStart=__REPO_DIR__/.venv/bin/python -m mdm.main
 Restart=on-failure
 RestartSec=2

@@ -86,7 +86,7 @@ def _login_approver(client: TestClient, admin_token: str, username: str, passwor
 def _upload_and_approve_client(
     client: TestClient, monkeypatch, submitter_token: str, approver_token: str, fields: dict, invoice_text: str
 ) -> str:
-    monkeypatch.setattr(llm_extraction, "OllamaExtractionClient", lambda: FakeExtractionClient(fields))
+    monkeypatch.setattr(llm_extraction, "OciGenAiExtractionClient", lambda: FakeExtractionClient(fields))
     pdf_bytes = _make_pdf_bytes(invoice_text)
     upload = client.post(
         "/documents",

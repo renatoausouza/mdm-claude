@@ -2,7 +2,7 @@ from pydantic import BaseModel
 
 from mdm import config
 from mdm.extraction_schema import FieldValue, llm_field_to_value
-from mdm.llm_extraction import OllamaExtractionClient, extract_product_fields
+from mdm.llm_extraction import OciGenAiExtractionClient, extract_product_fields
 from mdm.pdf_extraction import extract_pdf_pages
 from mdm.scoring import DomainSpec, ScoringResult, score_candidate
 
@@ -23,7 +23,7 @@ class ProductCandidateResult(BaseModel):
 
 
 def run_product_extraction(
-    content: bytes, llm_client: OllamaExtractionClient | None = None
+    content: bytes, llm_client: OciGenAiExtractionClient | None = None
 ) -> ProductCandidateResult:
     # No tax-ID/role-tagging pass here — unlike Supplier/Client, a Product
     # candidate isn't identified by a CNPJ/CPF, just extracted directly from

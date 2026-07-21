@@ -5,7 +5,7 @@ from mdm.cnpj_validation import is_valid_cnpj
 from mdm.cpf_validation import is_valid_cpf
 from mdm.extraction_schema import FieldValue, PartyInfo, llm_field_to_value
 from mdm.field_validation import is_valid_email, is_valid_telephone
-from mdm.llm_extraction import OllamaExtractionClient, extract_client_fields
+from mdm.llm_extraction import OciGenAiExtractionClient, extract_client_fields
 from mdm.party_extraction import party_to_info
 from mdm.pdf_extraction import extract_pdf_pages
 from mdm.regex_candidates import find_candidates
@@ -23,7 +23,7 @@ class ClientCandidateResult(BaseModel):
 
 
 def run_client_extraction(
-    content: bytes, llm_client: OllamaExtractionClient | None = None
+    content: bytes, llm_client: OciGenAiExtractionClient | None = None
 ) -> ClientCandidateResult:
     pages = extract_pdf_pages(content)
     full_text = "\n".join(page.text for page in pages)

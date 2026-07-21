@@ -34,7 +34,7 @@ def _uploader_headers(client: TestClient, username: str = "uploader") -> dict[st
 def test_uploading_a_pdf_triggers_extraction_and_result_is_retrievable(monkeypatch) -> None:
     monkeypatch.setattr(
         llm_extraction,
-        "OllamaExtractionClient",
+        "OciGenAiExtractionClient",
         lambda: FakeExtractionClient(
             {"legal_name": "ACME Ltda", "email": "contato@acme.com", "telephone": None, "address": None}
         ),
@@ -77,7 +77,7 @@ def test_result_without_authentication_is_rejected() -> None:
 def test_uploading_a_pdf_extracts_all_three_domains_at_once(monkeypatch) -> None:
     monkeypatch.setattr(
         llm_extraction,
-        "OllamaExtractionClient",
+        "OciGenAiExtractionClient",
         lambda: FakeExtractionClient(
             {
                 "legal_name": "ACME Ltda",

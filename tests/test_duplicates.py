@@ -80,7 +80,7 @@ def _login_approver(client: TestClient, admin_token: str, username: str, passwor
 def _upload_pending_review_job(
     client: TestClient, monkeypatch, submitter_token: str, fields: dict, cnpj: str = "11.223.344/0001-86"
 ) -> str:
-    monkeypatch.setattr(llm_extraction, "OllamaExtractionClient", lambda: FakeExtractionClient(fields))
+    monkeypatch.setattr(llm_extraction, "OciGenAiExtractionClient", lambda: FakeExtractionClient(fields))
     pdf_bytes = _make_pdf_bytes(f"Fornecedor CNPJ: {cnpj}")
     response = client.post(
         "/documents",
@@ -548,7 +548,7 @@ def test_reupload_of_duplicate_flagged_content_surfaces_the_case_id(monkeypatch)
     submitter_token = _login_submitter(client, admin_token, "reupload-dup-submitter")
     monkeypatch.setattr(
         llm_extraction,
-        "OllamaExtractionClient",
+        "OciGenAiExtractionClient",
         lambda: FakeExtractionClient(
             {"legal_name": "ACME Ltda", "email": "dup@acme.com", "telephone": None, "address": None}
         ),

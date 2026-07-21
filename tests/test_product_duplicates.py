@@ -85,7 +85,7 @@ def _login_approver(client: TestClient, admin_token: str, username: str, passwor
 
 
 def _upload_product_job(client: TestClient, monkeypatch, token: str, fields: dict, invoice_text: str) -> str:
-    monkeypatch.setattr(llm_extraction, "OllamaExtractionClient", lambda: FakeExtractionClient(fields))
+    monkeypatch.setattr(llm_extraction, "OciGenAiExtractionClient", lambda: FakeExtractionClient(fields))
     pdf_bytes = _make_pdf_bytes(invoice_text)
     response = client.post(
         "/documents",
@@ -252,7 +252,7 @@ def test_link_duplicate_rejects_a_different_domains_record(monkeypatch) -> None:
     # Register a supplier record, then try to link a product candidate to it.
     monkeypatch.setattr(
         llm_extraction,
-        "OllamaExtractionClient",
+        "OciGenAiExtractionClient",
         lambda: FakeExtractionClient(
             {"legal_name": "ACME Ltda", "email": None, "telephone": None, "address": None}
         ),

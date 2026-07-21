@@ -73,7 +73,7 @@ def _login_approver(client: TestClient, admin_token: str, username: str, passwor
 def _upload_product_job(
     client: TestClient, monkeypatch, headers: dict[str, str], fields: dict, invoice_text: str | None = None
 ) -> str:
-    monkeypatch.setattr(llm_extraction, "OllamaExtractionClient", lambda: FakeExtractionClient(fields))
+    monkeypatch.setattr(llm_extraction, "OciGenAiExtractionClient", lambda: FakeExtractionClient(fields))
     pdf_bytes = _make_pdf_bytes(invoice_text or "Item: Parafuso Sextavado M8, SKU PSX-M8-001")
     response = client.post(
         "/documents",

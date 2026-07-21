@@ -13,7 +13,7 @@ from mdm.documents import router as documents_router
 from mdm.duplicates import router as duplicates_router
 from mdm.i18n import bind_language, reset_language
 from mdm.master_record_edits import router as master_record_edits_router
-from mdm.ollama_client import OllamaClient
+from mdm.oci_genai_client import OciGenAiClient
 from mdm.review import router as review_router
 
 app = FastAPI(title="mdm")
@@ -54,12 +54,12 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-def get_ollama_client() -> OllamaClient:
-    return OllamaClient()
+def get_oci_genai_client() -> OciGenAiClient:
+    return OciGenAiClient()
 
 
 @app.get("/ready")
-def ready(response: Response, client: OllamaClient = Depends(get_ollama_client)) -> dict[str, str]:
+def ready(response: Response, client: OciGenAiClient = Depends(get_oci_genai_client)) -> dict[str, str]:
     if client.check():
         return {"status": "ready"}
     response.status_code = 503
