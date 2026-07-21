@@ -111,6 +111,15 @@ export function getMasterRecord(recordId: string): Promise<MasterRecordDetailRes
   return request<MasterRecordDetailResponse>(`/master-records/${recordId}`)
 }
 
+export function editMasterRecord(
+  recordId: string,
+  fieldOverrides: Record<string, string>,
+): Promise<MasterRecordDetailResponse> {
+  return request<MasterRecordDetailResponse>(`/master-records/${recordId}/edit`, {
+    body: { field_overrides: fieldOverrides },
+  })
+}
+
 export function linkDuplicate(jobId: string, payload: LinkDuplicateRequest): Promise<LinkDuplicateResponse> {
   return request<LinkDuplicateResponse>(`/jobs/${jobId}/link-duplicate`, { body: payload })
 }

@@ -107,6 +107,11 @@ export const translations: Record<Lang, Record<string, string>> = {
     'masterData.firstRegistered': 'First registered: {date}',
     'masterData.lastUpdated': 'Last updated: {date}',
     'masterData.fieldsTitle': 'Fields',
+    'masterData.edit': 'Edit',
+    'masterData.save': 'Save',
+    'masterData.cancel': 'Cancel',
+    'masterData.editSuccess': 'Record updated.',
+    'masterData.keyFieldReadOnlyHint': 'The key field cannot be edited here.',
 
     // ---- review detail page ----
     'review.candidateTitle': '{domain} candidate',
@@ -279,6 +284,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'auditAction.needs_info': 'Needs info',
     'auditAction.link-duplicate': 'Linked duplicate',
     'auditAction.purged': 'Purged',
+    'auditAction.edited': 'Edited',
 
     // ---- backend-generated (documents.py sets this directly on the job,
     // not via an HTTPException, so mdm.i18n doesn't cover it) ----
@@ -379,6 +385,11 @@ export const translations: Record<Lang, Record<string, string>> = {
     'masterData.firstRegistered': 'Cadastrado em: {date}',
     'masterData.lastUpdated': 'Atualizado em: {date}',
     'masterData.fieldsTitle': 'Campos',
+    'masterData.edit': 'Editar',
+    'masterData.save': 'Salvar',
+    'masterData.cancel': 'Cancelar',
+    'masterData.editSuccess': 'Registro atualizado.',
+    'masterData.keyFieldReadOnlyHint': 'O campo-chave não pode ser editado aqui.',
 
     // ---- review detail page ----
     'review.candidateTitle': 'Candidato de {domain}',
@@ -552,6 +563,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'auditAction.needs_info': 'Precisa de informações',
     'auditAction.link-duplicate': 'Duplicidade vinculada',
     'auditAction.purged': 'Expurgado',
+    'auditAction.edited': 'Editado',
 
     // ---- backend-generated (documents.py sets this directly on the job,
     // not via an HTTPException, so mdm.i18n doesn't cover it) ----

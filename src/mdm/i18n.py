@@ -222,4 +222,16 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "Only approver or admin accounts may view master data",
         "pt": "Somente contas de aprovador ou administrador podem visualizar os dados mestres",
     },
+    "key_field_not_editable": {
+        "en": "The key field ({field}) cannot be edited — it is the record's stable identity",
+        "pt": "O campo-chave ({field}) não pode ser editado — é a identidade estável do registro",
+    },
+    "direct_edit_not_allowed_for_domain": {
+        "en": "This domain requires an edit request reviewed by a second approver, not a direct edit",
+        "pt": "Este domínio exige uma solicitação de edição revisada por um segundo aprovador, não uma edição direta",
+    },
+    "record_changed_concurrently": {
+        "en": "This record was changed by another request — reload it and try again",
+        "pt": "Este registro foi alterado por outra solicitação — recarregue e tente novamente",
+    },
 }

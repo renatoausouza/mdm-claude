@@ -119,6 +119,16 @@ export const REQUIRES_SEGREGATION: Record<Domain, boolean> = {
   product: false,
 }
 
+// The field that seeds record_key / duplicate matching (mirrors
+// domains.DOMAIN_SPECS[...].key_field on the backend) — never editable
+// through the direct-edit console (#19) or the edit-request workflow
+// (#20); it's the record's stable identity, not a correctable detail.
+export const KEY_FIELDS: Record<Domain, string> = {
+  supplier: 'cnpj',
+  client: 'tax_id',
+  product: 'sku',
+}
+
 // ---- scoring.ts ----
 
 export interface ScoringResult {

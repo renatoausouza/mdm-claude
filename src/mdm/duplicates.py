@@ -373,6 +373,100 @@ def get_master_record(record_id: str, current_user: User = Depends(get_current_u
         )
 
 
+class MasterRecordEditRequest(BaseModel):
+    field_overrides: dict[str, str]
+
+
+@router.post("/master-records/{record_id}/edit", response_model=MasterRecordDetailResponse)
+def edit_master_record(
+    record_id: str, payload: MasterRecordEditRequest, current_user: User = Depends(get_current_user)
+) -> MasterRecordDetailResponse:
+    """#19: direct-write edit for Client/Product — no second-person
+    approval, mirroring REQUIRES_SEGREGATION exactly like every other
+    mutation path in this app (Supplier is rejected below; it goes through
+    #20's edit-request workflow instead). Strictly approver-only, not
+    admin — see _require_approver_or_admin's own docstring for why viewing
+    and deciding are gated differently."""
+    _require_approver(current_user)
+
+    with get_session() as session:
+        record = session.query(MasterRecord).filter_by(id=record_id, is_current=True).first()
+        if record is None:
+            raise HTTPException(status_code=404, detail=t("master_record_not_found"))
+
+        spec = DOMAIN_SPECS[record.domain]
+        if spec.requires_segregation:
+            raise HTTPException(status_code=400, detail=t("direct_edit_not_allowed_for_domain"))
+
+        key_field = spec.key_field
+        if key_field is not None and key_field in payload.field_overrides:
+            raise HTTPException(status_code=422, detail=t("key_field_not_editable", field=key_field))
+
+        editable_fields = set(spec.master_fields) - ({key_field} if key_field is not None else set())
+        unknown = set(payload.field_overrides) - editable_fields
+        if unknown:
+            raise HTTPException(status_code=422, detail=t("unknown_fields_overrides", fields=sorted(unknown)))
+
+        old_fields = json.loads(record.fields_json)
+        merged = {**old_fields, **payload.field_overrides}
+        now = datetime.datetime.now(datetime.timezone.utc)
+
+        new_record = MasterRecord(
+            id=str(uuid.uuid4()),
+            domain=record.domain,
+            record_key=record.record_key,
+            version=record.version + 1,
+            is_current=True,
+            fields_json=json.dumps(merged),
+            # Carried forward, not a new job — a direct edit has no
+            # extraction behind it. This keeps the required FK honest
+            # (source_job_id has no nullable/"no document" escape hatch)
+            # without inventing a fictional job; the version's lineage
+            # still correctly traces back to whatever originally
+            # registered this record.
+            source_job_id=record.source_job_id,
+            first_registered_at=record.first_registered_at,
+            last_updated_at=now,
+        )
+        record.is_current = False
+        session.add(new_record)
+
+        # Same reasoning as source_job_id above: an edit has no document of
+        # its own, so the audit entry points at the record's original
+        # source document — detail below makes it unambiguous this entry
+        # is a manual edit, not something that document's extraction did.
+        source_job = session.query(ExtractionJob).filter_by(id=record.source_job_id).first()
+        assert source_job is not None, "a MasterRecord's source_job_id always references a real ExtractionJob"
+        session.add(
+            AuditLogEntry(
+                id=str(uuid.uuid4()),
+                document_id=source_job.document_id,
+                action="edited",
+                actor_user_id=current_user.id,
+                before_json=json.dumps(old_fields),
+                after_json=json.dumps(merged),
+                occurred_at=now,
+                detail="Manual field edit via the master data console — not related to this document's own extraction",
+            )
+        )
+
+        try:
+            session.commit()
+        except IntegrityError:
+            session.rollback()
+            raise HTTPException(status_code=409, detail=t("record_changed_concurrently")) from None
+
+        return MasterRecordDetailResponse(
+            id=new_record.id,
+            domain=new_record.domain,
+            record_key=new_record.record_key,
+            version=new_record.version,
+            fields=merged,
+            first_registered_at=new_record.first_registered_at,
+            last_updated_at=new_record.last_updated_at,
+        )
+
+
 class LinkDuplicateRequest(BaseModel):
     master_record_id: str
     notes: str | None = None
