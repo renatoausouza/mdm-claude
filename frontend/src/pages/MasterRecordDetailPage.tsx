@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import * as api from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
 import { ErrorBanner } from '../components/ErrorBanner'
@@ -21,7 +21,7 @@ export function MasterRecordDetailPage() {
   const load = useCallback(() => {
     if (!id) return
     setError(null)
-    api.getMasterRecord(id).then(setRecord).catch(setError)
+    return api.getMasterRecord(id).then(setRecord).catch(setError)
   }, [id])
 
   useEffect(() => {
@@ -31,10 +31,12 @@ export function MasterRecordDetailPage() {
   if (error) return <ErrorBanner error={error} />
   if (!record) return <p>{t('common.loading')}</p>
 
-  // Client/Product only — Supplier requires the second-approver edit
-  // request workflow instead (#20), same split as REQUIRES_SEGREGATION
-  // everywhere else in this app.
-  const canEdit = session?.role === 'approver' && !REQUIRES_SEGREGATION[record.domain]
+  // Client/Product edit immediately; Supplier requires the second-approver
+  // edit-request workflow instead (#20) — same REQUIRES_SEGREGATION split
+  // as everywhere else in this app. Either way, only one proposal/edit at
+  // a time: hide the affordance while a request is already pending.
+  const isSegregated = REQUIRES_SEGREGATION[record.domain]
+  const canAct = session?.role === 'approver' && !record.pending_edit_request_id
   const keyField = KEY_FIELDS[record.domain]
 
   const dateFormat = new Intl.DateTimeFormat(lang === 'pt' ? 'pt-BR' : 'en-US', {
@@ -54,10 +56,16 @@ export function MasterRecordDetailPage() {
     setSaveError(null)
     try {
       const { [keyField]: _omitted, ...fieldOverrides } = overrides
-      const updated = await api.editMasterRecord(record!.id, fieldOverrides)
-      setRecord(updated)
+      if (isSegregated) {
+        await api.submitEditRequest(record!.id, fieldOverrides)
+        await load()
+        setMessage(t('masterData.editRequestSubmitted'))
+      } else {
+        const updated = await api.editMasterRecord(record!.id, fieldOverrides)
+        setRecord(updated)
+        setMessage(t('masterData.editSuccess'))
+      }
       setEditing(false)
-      setMessage(t('masterData.editSuccess'))
     } catch (err) {
       setSaveError(err)
     } finally {
@@ -77,14 +85,21 @@ export function MasterRecordDetailPage() {
         {t('masterData.lastUpdated', { date: dateFormat.format(new Date(record.last_updated_at)) })}
       </p>
 
+      {record.pending_edit_request_id && (
+        <div className="banner banner-info">
+          {t('masterData.pendingEditBanner')}{' '}
+          <Link to={`/edit-request/${record.pending_edit_request_id}`}>{t('masterData.reviewEditRequest')}</Link>
+        </div>
+      )}
+
       {message && !editing && <p className="banner banner-success">{message}</p>}
 
       <section className="candidate-fields">
         <div className="candidate-fields-header">
           <h2>{t('masterData.fieldsTitle')}</h2>
-          {canEdit && !editing && (
+          {canAct && !editing && (
             <button type="button" onClick={startEditing}>
-              {t('masterData.edit')}
+              {isSegregated ? t('masterData.proposeEdit') : t('masterData.edit')}
             </button>
           )}
         </div>
@@ -119,7 +134,7 @@ export function MasterRecordDetailPage() {
             <ErrorBanner error={saveError} />
             <div className="review-action-buttons">
               <button type="button" className="btn-primary" onClick={handleSave} disabled={saving}>
-                {saving ? t('common.loading') : t('masterData.save')}
+                {saving ? t('common.loading') : isSegregated ? t('masterData.proposeEditSubmit') : t('masterData.save')}
               </button>
               <button type="button" onClick={() => setEditing(false)} disabled={saving}>
                 {t('masterData.cancel')}

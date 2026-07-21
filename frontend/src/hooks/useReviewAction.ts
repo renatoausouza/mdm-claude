@@ -13,10 +13,11 @@ export function useReviewAction() {
 
   async function run(
     action: () => Promise<{ status: string }>,
-    // 'common.job' or 'common.case' — a translation key, not display text,
-    // so the eventual message is built in whatever language is active when
-    // the response actually comes back (not when `run` was called).
-    subjectKey: 'common.job' | 'common.case',
+    // 'common.job'/'common.case'/'common.editRequest' — a translation key,
+    // not display text, so the eventual message is built in whatever
+    // language is active when the response actually comes back (not when
+    // `run` was called).
+    subjectKey: 'common.job' | 'common.case' | 'common.editRequest',
     onSuccess: () => void,
   ): Promise<void> {
     setActionError(null)

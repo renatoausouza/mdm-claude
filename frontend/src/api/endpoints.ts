@@ -4,6 +4,7 @@ import type {
   DashboardResponse,
   Domain,
   DuplicateCaseResponse,
+  EditRequestDecision,
   JobListResponse,
   JobResponse,
   JobResultResponse,
@@ -12,6 +13,7 @@ import type {
   LinkDuplicateResponse,
   LoginResponse,
   MasterRecordDetailResponse,
+  MasterRecordEditRequestResponse,
   MasterRecordSearchResponse,
   MfaEnrollResponse,
   RequestInfoRequest,
@@ -122,6 +124,31 @@ export function editMasterRecord(
 
 export function linkDuplicate(jobId: string, payload: LinkDuplicateRequest): Promise<LinkDuplicateResponse> {
   return request<LinkDuplicateResponse>(`/jobs/${jobId}/link-duplicate`, { body: payload })
+}
+
+// ---- master record edit requests (#20 — Supplier's second-approver path) ----
+
+export function submitEditRequest(
+  recordId: string,
+  fieldOverrides: Record<string, string>,
+): Promise<MasterRecordEditRequestResponse> {
+  return request<MasterRecordEditRequestResponse>(`/master-records/${recordId}/edit-requests`, {
+    body: { field_overrides: fieldOverrides },
+  })
+}
+
+export function getEditRequest(requestId: string): Promise<MasterRecordEditRequestResponse> {
+  return request<MasterRecordEditRequestResponse>(`/edit-requests/${requestId}`)
+}
+
+export function resolveEditRequest(
+  requestId: string,
+  decision: EditRequestDecision,
+  notes?: string,
+): Promise<MasterRecordEditRequestResponse> {
+  return request<MasterRecordEditRequestResponse>(`/edit-requests/${requestId}/resolve`, {
+    body: { decision, notes: notes || undefined },
+  })
 }
 
 // ---- dashboard ----

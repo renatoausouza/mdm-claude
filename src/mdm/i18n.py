@@ -234,4 +234,24 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "This record was changed by another request — reload it and try again",
         "pt": "Este registro foi alterado por outra solicitação — recarregue e tente novamente",
     },
+    "edit_request_not_allowed_for_domain": {
+        "en": "This domain doesn't require a second-approver edit request — use the direct edit instead",
+        "pt": "Este domínio não exige uma solicitação de edição com segundo aprovador — use a edição direta",
+    },
+    "edit_request_already_pending": {
+        "en": "A pending edit request already exists for this record",
+        "pt": "Já existe uma solicitação de edição pendente para este registro",
+    },
+    "edit_request_not_found": {
+        "en": "Edit request not found",
+        "pt": "Solicitação de edição não encontrada",
+    },
+    "edit_request_already_decided": {
+        "en": "This edit request has already been decided (status={status})",
+        "pt": "Esta solicitação de edição já foi decidida (status={status})",
+    },
+    "segregation_cannot_approve_own_edit_request": {
+        "en": "Segregation of duties: you cannot approve your own edit request",
+        "pt": "Segregação de funções: você não pode aprovar sua própria solicitação de edição",
+    },
 }

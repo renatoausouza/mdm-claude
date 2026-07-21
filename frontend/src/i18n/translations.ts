@@ -19,6 +19,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'common.yes': 'Yes',
     'common.job': 'Job',
     'common.case': 'Case',
+    'common.editRequest': 'Edit request',
     'common.statusUpdateMessage': '{subject} is now {status}.',
 
     // ---- layout / nav ----
@@ -112,6 +113,17 @@ export const translations: Record<Lang, Record<string, string>> = {
     'masterData.cancel': 'Cancel',
     'masterData.editSuccess': 'Record updated.',
     'masterData.keyFieldReadOnlyHint': 'The key field cannot be edited here.',
+    'masterData.proposeEdit': 'Propose edit',
+    'masterData.proposeEditSubmit': 'Submit proposal',
+    'masterData.pendingEditBanner': 'There is a pending edit request for this record.',
+    'masterData.reviewEditRequest': 'Review edit request',
+    'masterData.editRequestSubmitted': 'Edit request submitted — a different approver must review it.',
+
+    // ---- edit request review page ----
+    'editRequest.title': 'Edit request review',
+    'editRequest.segregationBanner': 'You submitted this edit request — a different approver must review it.',
+    'editRequest.segregationTitle': 'You cannot approve your own edit request',
+    'editRequest.approverOnlyHint': 'Only approver accounts can review an edit request.',
 
     // ---- review detail page ----
     'review.candidateTitle': '{domain} candidate',
@@ -297,6 +309,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'common.yes': 'Sim',
     'common.job': 'Registro',
     'common.case': 'Caso',
+    'common.editRequest': 'Solicitação de edição',
     'common.statusUpdateMessage': '{subject} agora está {status}.',
 
     // ---- layout / nav ----
@@ -390,6 +403,17 @@ export const translations: Record<Lang, Record<string, string>> = {
     'masterData.cancel': 'Cancelar',
     'masterData.editSuccess': 'Registro atualizado.',
     'masterData.keyFieldReadOnlyHint': 'O campo-chave não pode ser editado aqui.',
+    'masterData.proposeEdit': 'Propor edição',
+    'masterData.proposeEditSubmit': 'Enviar proposta',
+    'masterData.pendingEditBanner': 'Há uma solicitação de edição pendente para este registro.',
+    'masterData.reviewEditRequest': 'Revisar solicitação de edição',
+    'masterData.editRequestSubmitted': 'Solicitação de edição enviada — outro aprovador deve revisá-la.',
+
+    // ---- edit request review page ----
+    'editRequest.title': 'Revisão de solicitação de edição',
+    'editRequest.segregationBanner': 'Você enviou esta solicitação de edição — outro aprovador deve revisá-la.',
+    'editRequest.segregationTitle': 'Você não pode aprovar sua própria solicitação de edição',
+    'editRequest.approverOnlyHint': 'Somente contas de aprovador podem revisar uma solicitação de edição.',
 
     // ---- review detail page ----
     'review.candidateTitle': 'Candidato de {domain}',

@@ -11,6 +11,7 @@ from mdm.dashboard import router as dashboard_router
 from mdm.documents import router as documents_router
 from mdm.duplicates import router as duplicates_router
 from mdm.i18n import bind_language, reset_language
+from mdm.master_record_edits import router as master_record_edits_router
 from mdm.ollama_client import OllamaClient
 from mdm.review import router as review_router
 
@@ -21,6 +22,7 @@ app.include_router(review_router)
 app.include_router(duplicates_router)
 app.include_router(audit_router)
 app.include_router(dashboard_router)
+app.include_router(master_record_edits_router)
 
 
 @app.middleware("http")

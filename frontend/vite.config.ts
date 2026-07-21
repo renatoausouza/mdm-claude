@@ -11,6 +11,7 @@ const API_PATHS = [
   '/jobs',
   '/duplicates',
   '/master-records',
+  '/edit-requests',
   '/dashboard',
   '/auth',
   '/users',

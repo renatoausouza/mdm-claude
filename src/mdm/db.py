@@ -157,6 +157,48 @@ class DuplicateReviewCase(Base):
     accepted_fields_json: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
+class MasterRecordEditRequest(Base):
+    """#20: a human-proposed correction to a current MasterRecord's
+    non-key fields, for domains where REQUIRES_SEGREGATION is True
+    (Supplier) — the second-approver-reviewed counterpart to #19's
+    immediate direct-edit path for Client/Product. Deliberately not a
+    DuplicateReviewCase: that table means "the system auto-detected a
+    possible duplicate," and overloading it to also mean "a human proposed
+    a manual correction" would make it (and the audit trail referencing
+    it) mean two different things — see #17/#20's own reasoning."""
+
+    __tablename__ = "master_record_edit_requests"
+    __table_args__ = (
+        # At most one pending request per record at a time — same
+        # partial-unique-index pattern as MasterRecord's own
+        # one-current-per-key guarantee, for the same reason: an
+        # application-level pre-check gives a clean 409 in the common
+        # case, but this is what makes the invariant hold even if two
+        # approvers race to submit a proposal for the same record at once.
+        Index(
+            "ix_master_record_edit_requests_one_pending_per_record",
+            "master_record_id",
+            unique=True,
+            sqlite_where=text("status = 'pending'"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    master_record_id: Mapped[str] = mapped_column(String, ForeignKey("master_records.id"), index=True)
+    # Only the fields being changed — comparisons against the current
+    # record's other (unchanged) fields are computed live at read time,
+    # not snapshotted, so the reviewer always sees a true current-vs-
+    # proposed diff even if this request sat pending for a while.
+    proposed_fields_json: Mapped[str] = mapped_column(String)
+    submitted_by: Mapped[str] = mapped_column(String, ForeignKey("users.id"))
+    # "pending" | "approved" | "rejected"
+    status: Mapped[str] = mapped_column(String, default="pending")
+    reviewed_by: Mapped[str | None] = mapped_column(String, ForeignKey("users.id"), nullable=True)
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class ApprovalEvent(Base):
     """One row per review decision (approve/reject/needs_info) — the
     solution brief's §6/§11 record of who submitted, who decided, and what

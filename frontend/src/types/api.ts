@@ -257,6 +257,22 @@ export interface MasterRecordDetailResponse {
   fields: Record<string, string>
   first_registered_at: string
   last_updated_at: string
+  pending_edit_request_id: string | null
+}
+
+export type EditRequestStatus = 'pending' | 'approved' | 'rejected'
+export type EditRequestDecision = 'approve' | 'reject'
+
+export interface MasterRecordEditRequestResponse {
+  id: string
+  master_record_id: string
+  domain: Domain
+  status: EditRequestStatus
+  submitted_by: string
+  reviewed_by: string | null
+  comparisons: FieldComparison[]
+  created_at: string
+  reviewed_at: string | null
 }
 
 // ---- dashboard.ts ----

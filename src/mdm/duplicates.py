@@ -9,7 +9,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from mdm.auth import get_current_user
-from mdm.db import AuditLogEntry, Document, DuplicateReviewCase, ExtractionJob, MasterRecord, User, get_session
+from mdm.db import (
+    AuditLogEntry,
+    Document,
+    DuplicateReviewCase,
+    ExtractionJob,
+    MasterRecord,
+    MasterRecordEditRequest,
+    User,
+    get_session,
+)
 from mdm.domains import DOMAIN_SPECS, fields_dict, job_domain, normalized_field
 from mdm.i18n import t
 from mdm.review import (
@@ -347,6 +356,11 @@ class MasterRecordDetailResponse(BaseModel):
     fields: dict[str, str]
     first_registered_at: datetime.datetime
     last_updated_at: datetime.datetime
+    # Set when a #20 edit request (Supplier's second-approver-reviewed
+    # correction) is awaiting review for this record — lets the detail
+    # page surface "there's a pending proposal" the same way job results
+    # already surface duplicate_review_case_id.
+    pending_edit_request_id: str | None = None
 
 
 @router.get("/master-records/{record_id}", response_model=MasterRecordDetailResponse)
@@ -362,6 +376,9 @@ def get_master_record(record_id: str, current_user: User = Depends(get_current_u
         record = session.query(MasterRecord).filter_by(id=record_id, is_current=True).first()
         if record is None:
             raise HTTPException(status_code=404, detail=t("master_record_not_found"))
+        pending_edit_request = (
+            session.query(MasterRecordEditRequest).filter_by(master_record_id=record.id, status="pending").first()
+        )
         return MasterRecordDetailResponse(
             id=record.id,
             domain=record.domain,
@@ -370,16 +387,17 @@ def get_master_record(record_id: str, current_user: User = Depends(get_current_u
             fields=json.loads(record.fields_json),
             first_registered_at=record.first_registered_at,
             last_updated_at=record.last_updated_at,
+            pending_edit_request_id=pending_edit_request.id if pending_edit_request is not None else None,
         )
 
 
-class MasterRecordEditRequest(BaseModel):
+class MasterRecordDirectEditBody(BaseModel):
     field_overrides: dict[str, str]
 
 
 @router.post("/master-records/{record_id}/edit", response_model=MasterRecordDetailResponse)
 def edit_master_record(
-    record_id: str, payload: MasterRecordEditRequest, current_user: User = Depends(get_current_user)
+    record_id: str, payload: MasterRecordDirectEditBody, current_user: User = Depends(get_current_user)
 ) -> MasterRecordDetailResponse:
     """#19: direct-write edit for Client/Product — no second-person
     approval, mirroring REQUIRES_SEGREGATION exactly like every other
