@@ -1,6 +1,7 @@
 import { request, uploadFile } from './client'
 import type {
   AuditLogListResponse,
+  DashboardResponse,
   Domain,
   DuplicateCaseResponse,
   JobListResponse,
@@ -112,6 +113,12 @@ export function getMasterRecord(recordId: string): Promise<MasterRecordDetailRes
 
 export function linkDuplicate(jobId: string, payload: LinkDuplicateRequest): Promise<LinkDuplicateResponse> {
   return request<LinkDuplicateResponse>(`/jobs/${jobId}/link-duplicate`, { body: payload })
+}
+
+// ---- dashboard ----
+
+export function getDashboard(): Promise<DashboardResponse> {
+  return request<DashboardResponse>('/dashboard')
 }
 
 // ---- audit ----

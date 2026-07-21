@@ -6,7 +6,18 @@ import react from '@vitejs/plugin-react'
 // (the backend has no CORS middleware, matching how production's nginx
 // reverse-proxies the same paths — see deploy/nginx-mdm.conf). Everything
 // else falls through to Vite's own dev server for the SPA/client routing.
-const API_PATHS = ['/documents', '/jobs', '/duplicates', '/master-records', '/auth', '/users', '/audit', '/health', '/ready']
+const API_PATHS = [
+  '/documents',
+  '/jobs',
+  '/duplicates',
+  '/master-records',
+  '/dashboard',
+  '/auth',
+  '/users',
+  '/audit',
+  '/health',
+  '/ready',
+]
 
 export default defineConfig({
   plugins: [react()],

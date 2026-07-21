@@ -14,11 +14,13 @@ import { AuditPage } from './pages/AuditPage'
 import { HelpPage } from './pages/HelpPage'
 import { MasterDataPage } from './pages/MasterDataPage'
 import { MasterRecordDetailPage } from './pages/MasterRecordDetailPage'
+import { DashboardPage } from './pages/DashboardPage'
 
 // Page routes below are deliberately singular/renamed (/job, /duplicate,
-// /audit-log) where they'd otherwise collide with an API path prefix
-// (/jobs, /duplicates, /audit) that the dev proxy and nginx forward to the
-// backend — a colliding route would 404 on hard refresh or a direct link.
+// /audit-log, /data-quality) where they'd otherwise collide with an API
+// path prefix (/jobs, /duplicates, /audit, /dashboard) that the dev proxy
+// and nginx forward to the backend — a colliding route would 404 on hard
+// refresh or a direct link.
 export default function App() {
   return (
     <BrowserRouter>
@@ -41,6 +43,14 @@ export default function App() {
               <Route path="/job/:jobId" element={<ReviewDetailPage />} />
               <Route path="/duplicate/:caseId" element={<DuplicateResolvePage />} />
               <Route path="/help" element={<HelpPage />} />
+              <Route
+                path="/data-quality"
+                element={
+                  <ProtectedRoute allowedRoles={['approver', 'admin']}>
+                    <DashboardPage />
+                  </ProtectedRoute>
+                }
+              />
               <Route
                 path="/master-data/:domain"
                 element={

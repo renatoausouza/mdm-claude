@@ -14,12 +14,17 @@ from typing import Callable
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from mdm.client_extraction import ClientCandidateResult, run_client_extraction, score_client
+from mdm.client_extraction import CLIENT_DOMAIN_SPEC, ClientCandidateResult, run_client_extraction, score_client
 from mdm.db import DuplicateReviewCase, ExtractionJob, MasterRecord
 from mdm.extraction_schema import FieldValue
-from mdm.product_extraction import ProductCandidateResult, run_product_extraction, score_product
-from mdm.scoring import ScoringResult
-from mdm.supplier_extraction import SupplierCandidateResult, run_supplier_extraction, score_supplier
+from mdm.product_extraction import PRODUCT_DOMAIN_SPEC, ProductCandidateResult, run_product_extraction, score_product
+from mdm.scoring import DomainSpec, ScoringResult
+from mdm.supplier_extraction import (
+    SUPPLIER_DOMAIN_SPEC,
+    SupplierCandidateResult,
+    run_supplier_extraction,
+    score_supplier,
+)
 
 
 def normalized_field(field: FieldValue) -> str:
@@ -95,6 +100,14 @@ class DomainRegistration:
     # missing an extractor can't happen; adding a domain to DOMAIN_SPECS is
     # the only place a new one needs to be wired in.
     extract: Callable[[bytes], BaseModel]
+    # The underlying required/optional fields + structural validators —
+    # `score` above is already bound to this (each domain's score_X wraps
+    # its own module-level *_DOMAIN_SPEC), but that binding only accepts a
+    # typed candidate result model. A consumer scoring a plain dict instead
+    # (#18's dashboard, recomputing completeness/compliance from an
+    # already-approved MasterRecord's fields_json) needs the DomainSpec
+    # itself, not a function closed over one.
+    scoring_spec: DomainSpec
 
 
 DOMAIN_SPECS: dict[str, DomainRegistration] = {
@@ -106,6 +119,7 @@ DOMAIN_SPECS: dict[str, DomainRegistration] = {
         score=score_supplier,  # type: ignore[arg-type]
         detect_duplicate=detect_duplicate_by_key,
         extract=run_supplier_extraction,
+        scoring_spec=SUPPLIER_DOMAIN_SPEC,
     ),
     "client": DomainRegistration(
         result_model=ClientCandidateResult,
@@ -117,6 +131,7 @@ DOMAIN_SPECS: dict[str, DomainRegistration] = {
         score=score_client,  # type: ignore[arg-type]
         detect_duplicate=detect_duplicate_by_key,  # #9
         extract=run_client_extraction,
+        scoring_spec=CLIENT_DOMAIN_SPEC,
     ),
     "product": DomainRegistration(
         result_model=ProductCandidateResult,
@@ -126,6 +141,7 @@ DOMAIN_SPECS: dict[str, DomainRegistration] = {
         score=score_product,  # type: ignore[arg-type]
         detect_duplicate=detect_duplicate_by_key,  # #11 — no-SKU never matches (returns None), see docstring
         extract=run_product_extraction,
+        scoring_spec=PRODUCT_DOMAIN_SPEC,
     ),
 }
 

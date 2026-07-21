@@ -32,6 +32,11 @@ export function Layout() {
           <NavLink to="/upload" className="app-nav-link">
             {t('layout.navIntake')}
           </NavLink>
+          {(session?.role === 'approver' || session?.role === 'admin') && (
+            <NavLink to="/data-quality" className="app-nav-link">
+              {t('layout.navDashboard')}
+            </NavLink>
+          )}
 
           <div className="app-nav-section">{t('layout.navQueuesSection')}</div>
           {DOMAINS.map((domain) => (

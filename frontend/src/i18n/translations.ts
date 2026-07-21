@@ -25,6 +25,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'layout.brandCaption': 'Master Data Registry',
     'layout.pageTitle': 'MDM — Master Data Registry',
     'layout.navIntake': 'Intake',
+    'layout.navDashboard': 'Dashboard',
     'layout.navQueuesSection': 'Queues',
     'layout.navMasterDataSection': 'Master Data',
     'layout.navRecordsSection': 'Records',
@@ -172,6 +173,18 @@ export const translations: Record<Lang, Record<string, string>> = {
     'audit.before': 'before: {value}',
     'audit.after': 'after: {value}',
 
+    // ---- data quality dashboard ----
+    'dashboard.title': 'Data quality',
+    'dashboard.dataHealthTitle': 'Registered data health',
+    'dashboard.colDomain': 'Domain',
+    'dashboard.colRecords': 'Records',
+    'dashboard.colCompleteness': 'Completeness',
+    'dashboard.colCompliance': 'Compliance',
+    'dashboard.pipelineTitle': 'Pipeline health',
+    'dashboard.extractionFailureRate': 'Extraction failure rate: {rate}%',
+    'dashboard.openDuplicateCases': 'Open duplicate cases: {count}',
+    'dashboard.noRecordsYet': 'No records yet',
+
     // ---- help page ----
     'help.title': 'How this works',
     'help.intro':
@@ -284,6 +297,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'layout.brandCaption': 'Registro de Dados Mestres',
     'layout.pageTitle': 'MDM — Registro de Dados Mestres',
     'layout.navIntake': 'Entrada',
+    'layout.navDashboard': 'Painel',
     'layout.navQueuesSection': 'Filas',
     'layout.navMasterDataSection': 'Dados Mestres',
     'layout.navRecordsSection': 'Registros',
@@ -431,6 +445,18 @@ export const translations: Record<Lang, Record<string, string>> = {
     'audit.changes': 'alterações',
     'audit.before': 'antes: {value}',
     'audit.after': 'depois: {value}',
+
+    // ---- data quality dashboard ----
+    'dashboard.title': 'Qualidade dos dados',
+    'dashboard.dataHealthTitle': 'Saúde dos dados cadastrados',
+    'dashboard.colDomain': 'Domínio',
+    'dashboard.colRecords': 'Registros',
+    'dashboard.colCompleteness': 'Completude',
+    'dashboard.colCompliance': 'Conformidade',
+    'dashboard.pipelineTitle': 'Saúde do fluxo',
+    'dashboard.extractionFailureRate': 'Taxa de falha na extração: {rate}%',
+    'dashboard.openDuplicateCases': 'Casos de duplicidade em aberto: {count}',
+    'dashboard.noRecordsYet': 'Nenhum registro ainda',
 
     // ---- help page ----
     'help.title': 'Como funciona',

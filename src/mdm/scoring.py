@@ -8,6 +8,23 @@ class ScorableField(Protocol):
 
 
 @dataclass
+class AlreadyApprovedField:
+    """Bridges an already-registered MasterRecord's plain string field value
+    (fields_json has no confidence — it's discarded on approval, see
+    domains.fields_dict) into score_candidate's ScorableField shape, so
+    completeness/compliance can be recomputed for registered data (#18's
+    dashboard) with the exact same function extraction-time candidates use,
+    not a second copy of this logic. confidence is fixed at 1.0 and must
+    never be read from the result — completeness/compliance don't depend on
+    it (only low_confidence_fields/reliability do, and #18 deliberately
+    doesn't surface either: reliability/confidence are candidate-time-only
+    concepts that don't apply to already-registered data)."""
+
+    value: str
+    confidence: float = 1.0
+
+
+@dataclass
 class DomainSpec:
     """A domain's field vocabulary for scoring — not hardcoded to any one
     domain (Supplier/Client/Product all plug in their own required/optional

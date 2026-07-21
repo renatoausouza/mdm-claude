@@ -249,6 +249,27 @@ export interface MasterRecordDetailResponse {
   last_updated_at: string
 }
 
+// ---- dashboard.ts ----
+
+export interface DomainDataQuality {
+  domain: Domain
+  record_count: number
+  completeness: number
+  compliance: number
+}
+
+export interface DomainPipelineHealth {
+  domain: Domain
+  status_counts: Record<string, number>
+}
+
+export interface DashboardResponse {
+  data_quality: DomainDataQuality[]
+  pipeline_health: DomainPipelineHealth[]
+  extraction_failure_rate: number
+  open_duplicate_case_count: number
+}
+
 export interface LinkDuplicateRequest {
   master_record_id: string
   notes?: string | null

@@ -7,6 +7,7 @@ from fastapi import Depends, FastAPI, Request, Response
 from mdm import config
 from mdm.audit import router as audit_router
 from mdm.auth import router as auth_router
+from mdm.dashboard import router as dashboard_router
 from mdm.documents import router as documents_router
 from mdm.duplicates import router as duplicates_router
 from mdm.i18n import bind_language, reset_language
@@ -19,6 +20,7 @@ app.include_router(auth_router)
 app.include_router(review_router)
 app.include_router(duplicates_router)
 app.include_router(audit_router)
+app.include_router(dashboard_router)
 
 
 @app.middleware("http")
