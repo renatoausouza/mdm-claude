@@ -18,6 +18,7 @@ from mdm.review import (
     _record_decision,
     _reject_if_duplicate_pending,
     _require_approver,
+    _require_approver_or_admin,
 )
 
 router = APIRouter()
@@ -274,25 +275,34 @@ class MasterRecordSearchResult(BaseModel):
 
 class MasterRecordSearchResponse(BaseModel):
     results: list[MasterRecordSearchResult]
+    has_more: bool = False
+
+
+_SEARCH_DEFAULT_LIMIT = 50
 
 
 @router.get("/master-records/search", response_model=MasterRecordSearchResponse)
 def search_master_records(
-    domain: str, q: str = "", current_user: User = Depends(get_current_user)
+    domain: str,
+    q: str = "",
+    offset: int = 0,
+    limit: int = _SEARCH_DEFAULT_LIMIT,
+    current_user: User = Depends(get_current_user),
 ) -> MasterRecordSearchResponse:
-    """Manual search tool (#11) for a reviewer to find an existing record to
-    link a candidate against — e.g. a no-SKU Product candidate, which
-    detect_duplicate_by_key (domains.py) never auto-matches (FR-11: no
-    NCM+name fallback key, no fuzzy/similarity matching, ever). This
-    endpoint itself does no matching or linking — it's plain substring
-    search over current records' field values for a human to browse, not an
-    automated matching algorithm; the actual link only happens if the
-    reviewer explicitly calls POST /jobs/{job_id}/link-duplicate with a
-    specific master_record_id they picked from these results. Approver-only
-    (like resolve_duplicate/link_duplicate): every current record's full
-    field set — including PII (CPF/CNPJ, email, phone, address) — is
-    returned unfiltered, so this is not a submitter-safe browse surface."""
-    _require_approver(current_user)
+    """Two callers: the reviewer-driven "find a record to link a candidate
+    against" tool (#11 — e.g. a no-SKU Product candidate, which
+    detect_duplicate_by_key in domains.py never auto-matches per FR-11's no
+    NCM+name fallback, no fuzzy matching, ever), and #17's browse/search
+    master-data console. This endpoint itself does no matching or linking —
+    it's plain substring search over current records' field values for a
+    human to browse; an actual link only happens if a reviewer explicitly
+    calls POST /jobs/{job_id}/link-duplicate with a specific
+    master_record_id picked from these results. Approver-or-admin (like the
+    detail endpoint below, but stricter than plain view elsewhere — every
+    current record's full field set, including PII (CPF/CNPJ, email,
+    phone, address), is returned unfiltered, so this is not a
+    submitter-safe browse surface)."""
+    _require_approver_or_admin(current_user)
 
     if domain not in DOMAIN_SPECS:
         raise HTTPException(
@@ -301,26 +311,66 @@ def search_master_records(
 
     query = q.strip().lower()
     with get_session() as session:
-        records = session.query(MasterRecord).filter_by(domain=domain, is_current=True).all()
+        # Ordered explicitly (not relying on incidental insertion order) so
+        # offset-based paging returns a stable, non-overlapping sequence of
+        # pages across requests — most-recently-updated first, matching the
+        # "recent first" convention list_jobs/list_audit_log already use.
+        records = (
+            session.query(MasterRecord)
+            .filter_by(domain=domain, is_current=True)
+            .order_by(MasterRecord.last_updated_at.desc())
+            .all()
+        )
 
-    results: list[MasterRecordSearchResult] = []
-    # Capped rather than paginated — this is a reviewer-driven lookup tool
-    # for a specific candidate, not a browsing/listing feature, so "first
-    # 50 matches, narrow your query" is enough for now without building out
-    # real pagination the rest of this API doesn't have either.
+    matches: list[MasterRecordSearchResult] = []
     for record in records:
-        if len(results) >= 50:
-            break
         fields = json.loads(record.fields_json)
         haystack = " ".join(str(v) for v in fields.values()).lower()
         if query and query not in haystack:
             continue
-        results.append(
+        matches.append(
             MasterRecordSearchResult(
                 id=record.id, domain=record.domain, record_key=record.record_key, version=record.version, fields=fields
             )
         )
-    return MasterRecordSearchResponse(results=results)
+
+    page = matches[offset : offset + limit]
+    has_more = len(matches) > offset + limit
+    return MasterRecordSearchResponse(results=page, has_more=has_more)
+
+
+class MasterRecordDetailResponse(BaseModel):
+    id: str
+    domain: str
+    record_key: str
+    version: int
+    fields: dict[str, str]
+    first_registered_at: datetime.datetime
+    last_updated_at: datetime.datetime
+
+
+@router.get("/master-records/{record_id}", response_model=MasterRecordDetailResponse)
+def get_master_record(record_id: str, current_user: User = Depends(get_current_user)) -> MasterRecordDetailResponse:
+    """The read-only record detail view #17 needs (a stable, refreshable
+    URL — not just an in-memory search result), and the fetch-by-id #19/#20
+    build their edit flows on top of. Current-version only: an edit
+    proposal always targets whatever is current right now, never a
+    superseded historical version."""
+    _require_approver_or_admin(current_user)
+
+    with get_session() as session:
+        record = session.query(MasterRecord).filter_by(id=record_id, is_current=True).first()
+        if record is None:
+            raise HTTPException(status_code=404, detail=t("master_record_not_found"))
+        return MasterRecordDetailResponse(
+            id=record.id,
+            domain=record.domain,
+            record_key=record.record_key,
+            version=record.version,
+            fields=json.loads(record.fields_json),
+            first_registered_at=record.first_registered_at,
+            last_updated_at=record.last_updated_at,
+        )
 
 
 class LinkDuplicateRequest(BaseModel):

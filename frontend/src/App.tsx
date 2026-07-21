@@ -12,6 +12,8 @@ import { ReviewDetailPage } from './pages/ReviewDetailPage'
 import { DuplicateResolvePage } from './pages/DuplicateResolvePage'
 import { AuditPage } from './pages/AuditPage'
 import { HelpPage } from './pages/HelpPage'
+import { MasterDataPage } from './pages/MasterDataPage'
+import { MasterRecordDetailPage } from './pages/MasterRecordDetailPage'
 
 // Page routes below are deliberately singular/renamed (/job, /duplicate,
 // /audit-log) where they'd otherwise collide with an API path prefix
@@ -39,6 +41,22 @@ export default function App() {
               <Route path="/job/:jobId" element={<ReviewDetailPage />} />
               <Route path="/duplicate/:caseId" element={<DuplicateResolvePage />} />
               <Route path="/help" element={<HelpPage />} />
+              <Route
+                path="/master-data/:domain"
+                element={
+                  <ProtectedRoute allowedRoles={['approver', 'admin']}>
+                    <MasterDataPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/master-data/:domain/:id"
+                element={
+                  <ProtectedRoute allowedRoles={['approver', 'admin']}>
+                    <MasterRecordDetailPage />
+                  </ProtectedRoute>
+                }
+              />
               <Route
                 path="/audit-log"
                 element={

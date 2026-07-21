@@ -10,6 +10,7 @@ import type {
   LinkDuplicateRequest,
   LinkDuplicateResponse,
   LoginResponse,
+  MasterRecordDetailResponse,
   MasterRecordSearchResponse,
   MfaEnrollResponse,
   RequestInfoRequest,
@@ -90,8 +91,23 @@ export function resolveDuplicate(
   return request<ResolveDuplicateResponse>(`/duplicates/${caseId}/resolve`, { body: payload })
 }
 
-export function searchMasterRecords(domain: Domain, q: string): Promise<MasterRecordSearchResponse> {
-  return request<MasterRecordSearchResponse>('/master-records/search', { params: { domain, q } })
+export function searchMasterRecords(
+  domain: Domain,
+  q: string,
+  pagination: { offset?: number; limit?: number } = {},
+): Promise<MasterRecordSearchResponse> {
+  return request<MasterRecordSearchResponse>('/master-records/search', {
+    params: {
+      domain,
+      q,
+      offset: pagination.offset !== undefined ? String(pagination.offset) : undefined,
+      limit: pagination.limit !== undefined ? String(pagination.limit) : undefined,
+    },
+  })
+}
+
+export function getMasterRecord(recordId: string): Promise<MasterRecordDetailResponse> {
+  return request<MasterRecordDetailResponse>(`/master-records/${recordId}`)
 }
 
 export function linkDuplicate(jobId: string, payload: LinkDuplicateRequest): Promise<LinkDuplicateResponse> {

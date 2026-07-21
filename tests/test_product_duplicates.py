@@ -385,7 +385,10 @@ def test_field_overrides_rejects_unknown_field_names(monkeypatch) -> None:
     assert response.status_code == 422
 
 
-def test_search_master_records_requires_approver_role(monkeypatch) -> None:
+def test_search_master_records_rejects_submitter(monkeypatch) -> None:
+    """Approver and admin can both view (#17 widened this from
+    approver-only — see tests/test_master_records.py); submitter still
+    can't, same PII rationale as before."""
     client = TestClient(app)
     admin_token = _bootstrap_admin(client)
     _register_initial_product(client, monkeypatch, admin_token)

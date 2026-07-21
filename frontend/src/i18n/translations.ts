@@ -26,6 +26,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'layout.pageTitle': 'MDM — Master Data Registry',
     'layout.navIntake': 'Intake',
     'layout.navQueuesSection': 'Queues',
+    'layout.navMasterDataSection': 'Master Data',
     'layout.navRecordsSection': 'Records',
     'layout.navAuditLog': 'Audit log',
     'layout.navHelp': 'Help',
@@ -89,6 +90,22 @@ export const translations: Record<Lang, Record<string, string>> = {
     'queue.colSubmittedBy': 'Submitted by',
     'queue.colDuplicate': 'Duplicate?',
     'queue.review': 'Review',
+
+    // ---- master data (consult/search + detail) ----
+    'masterData.title': '{domain} master data',
+    'masterData.searchPlaceholder': 'Search by any field value…',
+    'masterData.empty': 'No records match this filter.',
+    'masterData.colKey': 'Key',
+    'masterData.colPreview': 'Preview',
+    'masterData.colVersion': 'Version',
+    'masterData.view': 'View',
+    'masterData.loadMore': 'Load more',
+    'masterData.detailTitle': '{domain} record',
+    'masterData.key': 'Key: {key}',
+    'masterData.version': 'Version {version}',
+    'masterData.firstRegistered': 'First registered: {date}',
+    'masterData.lastUpdated': 'Last updated: {date}',
+    'masterData.fieldsTitle': 'Fields',
 
     // ---- review detail page ----
     'review.candidateTitle': '{domain} candidate',
@@ -268,6 +285,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'layout.pageTitle': 'MDM — Registro de Dados Mestres',
     'layout.navIntake': 'Entrada',
     'layout.navQueuesSection': 'Filas',
+    'layout.navMasterDataSection': 'Dados Mestres',
     'layout.navRecordsSection': 'Registros',
     'layout.navAuditLog': 'Log de auditoria',
     'layout.navHelp': 'Ajuda',
@@ -331,6 +349,22 @@ export const translations: Record<Lang, Record<string, string>> = {
     'queue.colSubmittedBy': 'Enviado por',
     'queue.colDuplicate': 'Duplicidade?',
     'queue.review': 'Revisar',
+
+    // ---- master data (consult/search + detail) ----
+    'masterData.title': 'Dados mestres de {domain}',
+    'masterData.searchPlaceholder': 'Buscar por qualquer valor de campo…',
+    'masterData.empty': 'Nenhum registro corresponde a este filtro.',
+    'masterData.colKey': 'Chave',
+    'masterData.colPreview': 'Prévia',
+    'masterData.colVersion': 'Versão',
+    'masterData.view': 'Ver',
+    'masterData.loadMore': 'Carregar mais',
+    'masterData.detailTitle': 'Registro de {domain}',
+    'masterData.key': 'Chave: {key}',
+    'masterData.version': 'Versão {version}',
+    'masterData.firstRegistered': 'Cadastrado em: {date}',
+    'masterData.lastUpdated': 'Atualizado em: {date}',
+    'masterData.fieldsTitle': 'Campos',
 
     // ---- review detail page ----
     'review.candidateTitle': 'Candidato de {domain}',

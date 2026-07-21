@@ -41,6 +41,22 @@ export function Layout() {
             </NavLink>
           ))}
 
+          {(session?.role === 'approver' || session?.role === 'admin') && (
+            <>
+              <div className="app-nav-section">{t('layout.navMasterDataSection')}</div>
+              {DOMAINS.map((domain) => (
+                <NavLink
+                  key={domain}
+                  to={`/master-data/${domain}`}
+                  className="app-nav-link app-nav-link-domain"
+                >
+                  <DomainMark domain={domain} />
+                  {t(`domain.${domain}`)}
+                </NavLink>
+              ))}
+            </>
+          )}
+
           <div className="app-nav-section">{t('layout.navRecordsSection')}</div>
           <NavLink to="/help" className="app-nav-link">
             {t('layout.navHelp')}

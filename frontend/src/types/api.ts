@@ -236,6 +236,17 @@ export interface MasterRecordSearchResult {
 
 export interface MasterRecordSearchResponse {
   results: MasterRecordSearchResult[]
+  has_more: boolean
+}
+
+export interface MasterRecordDetailResponse {
+  id: string
+  domain: Domain
+  record_key: string
+  version: number
+  fields: Record<string, string>
+  first_registered_at: string
+  last_updated_at: string
 }
 
 export interface LinkDuplicateRequest {

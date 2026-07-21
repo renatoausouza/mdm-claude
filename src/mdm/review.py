@@ -49,6 +49,16 @@ def _require_approver(current_user: User) -> None:
         raise HTTPException(status_code=403, detail=t("approver_only_decisions"))
 
 
+def _require_approver_or_admin(current_user: User) -> None:
+    """For *viewing* master data (#17) — deliberately wider than
+    _require_approver, which stays strict for anything that actually
+    changes a record (resolve_duplicate, link_duplicate, approve/reject).
+    Admin has never had record-decision authority anywhere in this app and
+    this doesn't grant it — view-only."""
+    if current_user.role not in (UserRole.APPROVER.value, UserRole.ADMIN.value):
+        raise HTTPException(status_code=403, detail=t("approver_or_admin_only"))
+
+
 def _load_decidable_job(session: Session, job_id: str) -> tuple[ExtractionJob, Document]:
     job = session.query(ExtractionJob).filter_by(id=job_id).first()
     if job is None:

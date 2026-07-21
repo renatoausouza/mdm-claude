@@ -218,4 +218,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "Only admin accounts may view the audit log",
         "pt": "Somente contas de administrador podem visualizar o log de auditoria",
     },
+    "approver_or_admin_only": {
+        "en": "Only approver or admin accounts may view master data",
+        "pt": "Somente contas de aprovador ou administrador podem visualizar os dados mestres",
+    },
 }
