@@ -332,6 +332,47 @@ label {
   color: var(--stamp-red);
 }
 
+.language-toggle {
+  display: inline-flex;
+  border: 1.25px solid var(--ink-muted);
+  border-radius: 3px;
+  overflow: hidden;
+  width: fit-content;
+}
+
+.language-toggle button {
+  border: none;
+  border-radius: 0;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  background: transparent;
+  color: var(--ink-muted);
+}
+
+.language-toggle button:not(:first-child) {
+  border-left: 1.25px solid var(--ink-muted);
+}
+
+.language-toggle button:hover:not(:disabled) {
+  background: var(--paper);
+}
+
+.language-toggle .language-toggle-active {
+  background: var(--clerk);
+  color: var(--clerk-text);
+}
+
+.language-toggle .language-toggle-active:hover {
+  background: var(--clerk-strong);
+}
+
+.app-language-toggle {
+  margin-top: 0.5rem;
+}
+
 .app-user {
   border-top: 1.5px solid var(--rule);
   padding-top: 0.85rem;
@@ -414,12 +455,19 @@ label {
    ========================================================================== */
 
 .centered-form {
+  position: relative;
   max-width: 400px;
   margin: 3.5rem auto;
   padding: 2rem 2.25rem;
   background: var(--surface);
   border: 1.5px solid var(--rule);
   border-radius: 4px;
+}
+
+.pre-auth-language-toggle {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
 }
 
 .upload-form {
@@ -454,6 +502,25 @@ label {
   background: #fff;
   border-radius: 4px;
   margin: 1rem 0;
+}
+
+.help-page {
+  max-width: 640px;
+}
+
+.help-section {
+  margin-top: 1.75rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--rule);
+}
+
+.help-section h2 {
+  font-size: 1rem;
+}
+
+.help-section p {
+  color: var(--ink-muted);
+  line-height: 1.65;
 }
 
 /* ==========================================================================

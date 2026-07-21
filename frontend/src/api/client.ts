@@ -12,6 +12,16 @@ export function getAuthToken(): string | null {
   return authToken
 }
 
+// Current UI language, attached to every request as X-MDM-Language so the
+// backend's error messages (mdm.i18n) match whatever's selected — set by
+// LanguageProvider, mirroring setAuthToken's module-level pattern above so
+// it's available to every fetch, including ones made before login.
+let apiLanguage: string | null = null
+
+export function setApiLanguage(lang: string | null): void {
+  apiLanguage = lang
+}
+
 // AuthContext registers a handler here so a 401 from any request (session
 // expired, token revoked server-side) can clear the stale session — without
 // this, a page whose fetch starts failing with 401 just shows a per-page
@@ -73,6 +83,7 @@ function buildUrl(path: string, params?: Record<string, string | undefined>): st
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = {}
   if (authToken) headers['Authorization'] = `Bearer ${authToken}`
+  if (apiLanguage) headers['X-MDM-Language'] = apiLanguage
   if (options.body !== undefined) headers['Content-Type'] = 'application/json'
 
   const response = await fetch(buildUrl(path, options.params), {
@@ -92,6 +103,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 export async function uploadFile<T>(path: string, formData: FormData): Promise<T> {
   const headers: Record<string, string> = {}
   if (authToken) headers['Authorization'] = `Bearer ${authToken}`
+  if (apiLanguage) headers['X-MDM-Language'] = apiLanguage
 
   const response = await fetch(path, { method: 'POST', headers, body: formData })
   if (!response.ok) {

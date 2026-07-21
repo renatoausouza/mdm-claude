@@ -3,18 +3,20 @@ import { Link, useParams } from 'react-router-dom'
 import * as api from '../api/endpoints'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { StatusBadge } from '../components/StatusBadge'
-import { DOMAIN_LABELS, type Domain, type JobStatus, type JobSummary } from '../types/api'
+import { useLanguage } from '../i18n/LanguageContext'
+import { type Domain, type JobStatus, type JobSummary } from '../types/api'
 
-const STATUS_FILTERS: { label: string; value: JobStatus | 'all' }[] = [
-  { label: 'Needs review', value: 'pending_review' },
-  { label: 'Needs info', value: 'needs_info' },
-  { label: 'Approved', value: 'approved' },
-  { label: 'Rejected', value: 'rejected' },
-  { label: 'All', value: 'all' },
+const STATUS_FILTERS: { labelKey: string; value: JobStatus | 'all' }[] = [
+  { labelKey: 'queue.filterNeedsReview', value: 'pending_review' },
+  { labelKey: 'queue.filterNeedsInfo', value: 'needs_info' },
+  { labelKey: 'queue.filterApproved', value: 'approved' },
+  { labelKey: 'queue.filterRejected', value: 'rejected' },
+  { labelKey: 'queue.filterAll', value: 'all' },
 ]
 
 export function QueuePage() {
   const { domain } = useParams<{ domain: Domain }>()
+  const { t } = useLanguage()
   const [statusFilter, setStatusFilter] = useState<JobStatus | 'all'>('pending_review')
   const [jobs, setJobs] = useState<JobSummary[] | null>(null)
   const [hasMore, setHasMore] = useState(false)
@@ -46,7 +48,7 @@ export function QueuePage() {
 
   return (
     <div>
-      <h1>{domain ? DOMAIN_LABELS[domain] : ''} review queue</h1>
+      <h1>{t('queue.title', { domain: domain ? t(`domain.${domain}`) : '' })}</h1>
       <div className="queue-filters">
         {STATUS_FILTERS.map((filter) => (
           <button
@@ -55,27 +57,22 @@ export function QueuePage() {
             className={statusFilter === filter.value ? 'filter-active' : ''}
             onClick={() => setStatusFilter(filter.value)}
           >
-            {filter.label}
+            {t(filter.labelKey)}
           </button>
         ))}
       </div>
       <ErrorBanner error={error} />
-      {hasMore && (
-        <p className="banner banner-info">
-          Showing the most recent 200 matching jobs — older ones aren't shown. Narrow the status filter above to
-          see more.
-        </p>
-      )}
-      {jobs === null && !error && <p>Loading…</p>}
-      {jobs !== null && jobs.length === 0 && <p>No jobs match this filter.</p>}
+      {hasMore && <p className="banner banner-info">{t('queue.truncatedNotice')}</p>}
+      {jobs === null && !error && <p>{t('common.loading')}</p>}
+      {jobs !== null && jobs.length === 0 && <p>{t('queue.empty')}</p>}
       {jobs !== null && jobs.length > 0 && (
         <table className="queue-table">
           <thead>
             <tr>
-              <th>Status</th>
-              <th>Created</th>
-              <th>Submitted by</th>
-              <th>Duplicate?</th>
+              <th>{t('queue.colStatus')}</th>
+              <th>{t('queue.colCreated')}</th>
+              <th>{t('queue.colSubmittedBy')}</th>
+              <th>{t('queue.colDuplicate')}</th>
               <th></th>
             </tr>
           </thead>
@@ -86,10 +83,10 @@ export function QueuePage() {
                   <StatusBadge status={job.status} />
                 </td>
                 <td>{new Date(job.created_at).toLocaleString()}</td>
-                <td>{job.uploaded_by ?? '—'}</td>
-                <td>{job.duplicate_review_case_id ? 'Yes' : '—'}</td>
+                <td>{job.uploaded_by ?? t('common.none')}</td>
+                <td>{job.duplicate_review_case_id ? t('common.yes') : t('common.none')}</td>
                 <td>
-                  <Link to={`/job/${job.id}`}>Review</Link>
+                  <Link to={`/job/${job.id}`}>{t('queue.review')}</Link>
                 </td>
               </tr>
             ))}

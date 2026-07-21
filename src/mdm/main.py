@@ -2,13 +2,14 @@ import socket
 import sys
 
 import uvicorn
-from fastapi import Depends, FastAPI, Response
+from fastapi import Depends, FastAPI, Request, Response
 
 from mdm import config
 from mdm.audit import router as audit_router
 from mdm.auth import router as auth_router
 from mdm.documents import router as documents_router
 from mdm.duplicates import router as duplicates_router
+from mdm.i18n import bind_language, reset_language
 from mdm.ollama_client import OllamaClient
 from mdm.review import router as review_router
 
@@ -18,6 +19,28 @@ app.include_router(auth_router)
 app.include_router(review_router)
 app.include_router(duplicates_router)
 app.include_router(audit_router)
+
+
+@app.middleware("http")
+async def language_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
+    """Binds the request's resolved language (X-MDM-Language header) to a
+    ContextVar for the duration of this request — see mdm.i18n.t(). This
+    reaches every t() call in the request's call graph, including ones
+    several calls deep in helpers that never see the request/header
+    directly (e.g. auth.py's _authenticate, reached via the
+    get_current_user dependency), without threading a language parameter
+    through every function signature in between.
+
+    Sync route handlers in this app run in Starlette's threadpool
+    (run_in_threadpool -> anyio.to_thread.run_sync), which copies the
+    current contextvars Context into the worker thread by default — so the
+    binding set here is visible there too, not just in async code.
+    """
+    token = bind_language(request.headers.get("x-mdm-language"))
+    try:
+        return await call_next(request)
+    finally:
+        reset_language(token)
 
 
 @app.get("/health")

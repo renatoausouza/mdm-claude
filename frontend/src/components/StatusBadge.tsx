@@ -1,4 +1,4 @@
-import { humanize } from '../utils'
+import { useLanguage } from '../i18n/LanguageContext'
 
 const STATUS_CLASS: Record<string, string> = {
   pending_review: 'status-pending',
@@ -14,6 +14,7 @@ const STATUS_CLASS: Record<string, string> = {
 }
 
 export function StatusBadge({ status }: { status: string }) {
+  const { t } = useLanguage()
   const cls = STATUS_CLASS[status] ?? 'status-neutral'
-  return <span className={`status-badge ${cls}`}>{humanize(status)}</span>
+  return <span className={`status-badge ${cls}`}>{t(`status.${status}`)}</span>
 }

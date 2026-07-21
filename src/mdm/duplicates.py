@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from mdm.auth import get_current_user
 from mdm.db import AuditLogEntry, Document, DuplicateReviewCase, ExtractionJob, MasterRecord, User, get_session
 from mdm.domains import DOMAIN_SPECS, fields_dict, job_domain, normalized_field
+from mdm.i18n import t
 from mdm.review import (
     _claim_decision,
     _load_decidable_job,
@@ -44,7 +45,7 @@ class DuplicateCaseResponse(BaseModel):
 def _load_case(session: Session, case_id: str) -> DuplicateReviewCase:
     case = session.query(DuplicateReviewCase).filter_by(id=case_id).first()
     if case is None:
-        raise HTTPException(status_code=404, detail="Duplicate review case not found")
+        raise HTTPException(status_code=404, detail=t("duplicate_case_not_found"))
     return case
 
 
@@ -110,13 +111,13 @@ def resolve_duplicate(
     _require_approver(current_user)
 
     if payload.decision == "partial" and not payload.accepted_fields:
-        raise HTTPException(status_code=422, detail="partial resolution requires accepted_fields")
+        raise HTTPException(status_code=422, detail=t("partial_requires_accepted_fields"))
 
     with get_session() as session:
         case = _load_case(session, case_id)
         if case.status != "pending":
             raise HTTPException(
-                status_code=409, detail=f"Duplicate review case already resolved (status={case.status})"
+                status_code=409, detail=t("duplicate_case_already_resolved", status=case.status)
             )
 
         # _load_decidable_job also blocks this job if it has a *different*
@@ -139,7 +140,7 @@ def resolve_duplicate(
         if payload.decision != "reject_all" and spec.requires_segregation and current_user.id == document.uploaded_by:
             raise HTTPException(
                 status_code=403,
-                detail="Segregation of duties: you cannot resolve a duplicate for your own submission",
+                detail=t("segregation_cannot_resolve_own"),
             )
 
         if payload.decision != "reject_all" and not matched.is_current:
@@ -152,9 +153,7 @@ def resolve_duplicate(
             # touch the record), so only accept_all/partial block.
             raise HTTPException(
                 status_code=409,
-                detail="The matched record has been superseded by another update since this case "
-                "was created — re-check for a duplicate against the current version before "
-                "resolving this case",
+                detail=t("matched_record_superseded"),
             )
 
         assert job.result_json is not None, "a decidable job always has a scored result"
@@ -167,7 +166,7 @@ def resolve_duplicate(
 
         if payload.decision == "reject_all":
             if not _claim_decision(session, job, "rejected"):
-                raise HTTPException(status_code=409, detail="Job was already decided by another request")
+                raise HTTPException(status_code=409, detail=t("job_already_decided"))
             case.status = "rejected"
             case.reviewed_by = current_user.id
             case.reviewed_at = now
@@ -193,7 +192,7 @@ def resolve_duplicate(
             unknown = accepted - set(spec.master_fields)
             if unknown:
                 raise HTTPException(
-                    status_code=422, detail=f"Unknown field(s) in accepted_fields: {sorted(unknown)}"
+                    status_code=422, detail=t("unknown_fields_accepted", fields=sorted(unknown))
                 )
             merged = dict(old_fields)
             for name in accepted:
@@ -208,7 +207,7 @@ def resolve_duplicate(
             resolved_status = "partially_accepted"
 
         if not _claim_decision(session, job, "approved"):
-            raise HTTPException(status_code=409, detail="Job was already decided by another request")
+            raise HTTPException(status_code=409, detail=t("job_already_decided"))
 
         new_record = MasterRecord(
             id=str(uuid.uuid4()),
@@ -259,8 +258,7 @@ def resolve_duplicate(
             session.rollback()
             raise HTTPException(
                 status_code=409,
-                detail="The matched record was updated by another request just now — re-check "
-                "for a duplicate against the current version before resolving this case",
+                detail=t("matched_record_updated_concurrently"),
             ) from None
 
         return ResolveDuplicateResponse(case_id=case.id, status=case.status, master_record_id=new_record.id)
@@ -297,7 +295,9 @@ def search_master_records(
     _require_approver(current_user)
 
     if domain not in DOMAIN_SPECS:
-        raise HTTPException(status_code=400, detail=f"Unknown domain: {domain!r} (must be one of {sorted(DOMAIN_SPECS)})")
+        raise HTTPException(
+            status_code=400, detail=t("unknown_domain", domain=repr(domain), choices=sorted(DOMAIN_SPECS))
+        )
 
     query = q.strip().lower()
     with get_session() as session:
@@ -354,13 +354,13 @@ def link_duplicate(
 
         matched = session.query(MasterRecord).filter_by(id=payload.master_record_id, is_current=True).first()
         if matched is None:
-            raise HTTPException(status_code=404, detail="No current master record found with that id")
+            raise HTTPException(status_code=404, detail=t("master_record_not_found"))
 
         domain = job_domain(job)
         if matched.domain != domain:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot link a {domain!r} candidate to a {matched.domain!r} record",
+                detail=t("cannot_link_domain_mismatch", domain=repr(domain), other_domain=repr(matched.domain)),
             )
 
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -404,7 +404,7 @@ def link_duplicate(
             session.rollback()
             raise HTTPException(
                 status_code=409,
-                detail="This job was just linked to a duplicate case by another request",
+                detail=t("job_just_linked_duplicate"),
             ) from None
 
         return LinkDuplicateResponse(case_id=case.id, status=case.status)

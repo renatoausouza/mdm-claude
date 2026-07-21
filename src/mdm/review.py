@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from mdm.auth import UserRole, get_current_user
 from mdm.db import ApprovalEvent, AuditLogEntry, Document, DuplicateReviewCase, ExtractionJob, MasterRecord, User, get_session
 from mdm.domains import DOMAIN_SPECS, fields_dict, find_current_master_record, job_domain
+from mdm.i18n import t
 
 router = APIRouter()
 
@@ -45,16 +46,16 @@ class ReviewDecisionResponse(BaseModel):
 
 def _require_approver(current_user: User) -> None:
     if current_user.role != UserRole.APPROVER.value:
-        raise HTTPException(status_code=403, detail="Only approver accounts may make review decisions")
+        raise HTTPException(status_code=403, detail=t("approver_only_decisions"))
 
 
 def _load_decidable_job(session: Session, job_id: str) -> tuple[ExtractionJob, Document]:
     job = session.query(ExtractionJob).filter_by(id=job_id).first()
     if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(status_code=404, detail=t("job_not_found"))
     if job.status not in _DECIDABLE_STATUSES:
         raise HTTPException(
-            status_code=409, detail=f"Job is not awaiting a review decision (status={job.status})"
+            status_code=409, detail=t("job_not_awaiting_decision", status=job.status)
         )
     document = session.query(Document).filter_by(id=job.document_id).first()
     assert document is not None, "every ExtractionJob row must have a matching Document"
@@ -71,8 +72,7 @@ def _reject_if_duplicate_pending(session: Session, job: ExtractionJob) -> None:
     if pending is not None:
         raise HTTPException(
             status_code=409,
-            detail=f"Job has a pending duplicate review case ({pending.id}) — "
-            "resolve it via POST /duplicates/{case_id}/resolve instead",
+            detail=t("job_has_pending_duplicate", case_id=pending.id),
         )
 
 
@@ -163,7 +163,7 @@ def approve_job(
         if spec.requires_segregation and current_user.id == document.uploaded_by:
             raise HTTPException(
                 status_code=403,
-                detail="Segregation of duties: you cannot approve your own submission for this domain",
+                detail=t("segregation_cannot_approve_own"),
             )
 
         _reject_if_duplicate_pending(session, job)
@@ -176,7 +176,7 @@ def approve_job(
             unknown = set(payload.field_overrides) - set(spec.master_fields)
             if unknown:
                 raise HTTPException(
-                    status_code=422, detail=f"Unknown field(s) in field_overrides: {sorted(unknown)}"
+                    status_code=422, detail=t("unknown_fields_overrides", fields=sorted(unknown))
                 )
             # Applied before the duplicate check below, on purpose: a
             # reviewer manually assigning a SKU that happens to already be
@@ -206,13 +206,12 @@ def approve_job(
             session.commit()
             raise HTTPException(
                 status_code=409,
-                detail=f"A matching {domain.capitalize()} record already exists — duplicate review "
-                f"case {case.id} created; resolve it via POST /duplicates/{case.id}/resolve instead",
+                detail=t("matching_record_found", domain=domain.capitalize(), case_id=case.id),
             )
 
         old_status = job.status
         if not _claim_decision(session, job, "approved"):
-            raise HTTPException(status_code=409, detail="Job was already decided by another request")
+            raise HTTPException(status_code=409, detail=t("job_already_decided"))
 
         now = datetime.datetime.now(datetime.timezone.utc)
         # The domain's natural key (normalized CNPJ/CPF/SKU) only when the
@@ -268,8 +267,7 @@ def approve_job(
             session.rollback()
             raise HTTPException(
                 status_code=409,
-                detail="A matching record was just registered by another request — retry to "
-                "pick up the resulting duplicate review case",
+                detail=t("record_registered_concurrently"),
             ) from None
 
         return ReviewDecisionResponse(job_id=job.id, status=job.status, master_record_id=master_record.id)
@@ -288,7 +286,7 @@ def reject_job(
         _reject_if_duplicate_pending(session, job)
         old_status = job.status
         if not _claim_decision(session, job, "rejected"):
-            raise HTTPException(status_code=409, detail="Job was already decided by another request")
+            raise HTTPException(status_code=409, detail=t("job_already_decided"))
         notes = payload.notes if payload is not None else None
         _record_decision(session, job, document, "rejected", current_user.id, notes, old_status)
         session.commit()
@@ -309,7 +307,7 @@ def request_info(
         _reject_if_duplicate_pending(session, job)
         old_status = job.status
         if not _claim_decision(session, job, "needs_info"):
-            raise HTTPException(status_code=409, detail="Job was already decided by another request")
+            raise HTTPException(status_code=409, detail=t("job_already_decided"))
         _record_decision(session, job, document, "needs_info", current_user.id, payload.notes, old_status)
         session.commit()
 

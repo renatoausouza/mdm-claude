@@ -1,10 +1,13 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
-import { DOMAIN_LABELS, DOMAINS } from '../types/api'
+import { useLanguage } from '../i18n/LanguageContext'
+import { DOMAINS } from '../types/api'
 import { DomainMark } from './DomainMark'
+import { LanguageToggle } from './LanguageToggle'
 
 export function Layout() {
   const { session, logout } = useAuth()
+  const { t } = useLanguage()
   const navigate = useNavigate()
 
   async function handleLogout() {
@@ -21,39 +24,42 @@ export function Layout() {
           </span>
           <span className="app-brand-text">
             MDM
-            <span className="app-brand-caption">Master Data Registry</span>
+            <span className="app-brand-caption">{t('layout.brandCaption')}</span>
           </span>
         </div>
 
         <nav className="app-nav">
           <NavLink to="/upload" className="app-nav-link">
-            Intake
+            {t('layout.navIntake')}
           </NavLink>
 
-          <div className="app-nav-section">Queues</div>
+          <div className="app-nav-section">{t('layout.navQueuesSection')}</div>
           {DOMAINS.map((domain) => (
             <NavLink key={domain} to={`/queue/${domain}`} className="app-nav-link app-nav-link-domain">
               <DomainMark domain={domain} />
-              {DOMAIN_LABELS[domain]}
+              {t(`domain.${domain}`)}
             </NavLink>
           ))}
 
+          <div className="app-nav-section">{t('layout.navRecordsSection')}</div>
+          <NavLink to="/help" className="app-nav-link">
+            {t('layout.navHelp')}
+          </NavLink>
           {session?.role === 'admin' && (
-            <>
-              <div className="app-nav-section">Records</div>
-              <NavLink to="/audit-log" className="app-nav-link">
-                Audit log
-              </NavLink>
-            </>
+            <NavLink to="/audit-log" className="app-nav-link">
+              {t('layout.navAuditLog')}
+            </NavLink>
           )}
         </nav>
+
+        <LanguageToggle className="app-language-toggle" />
 
         {session && (
           <div className="app-user">
             <div className="app-username">{session.username}</div>
-            <div className="app-role">{session.role}</div>
+            <div className="app-role">{t(`role.${session.role}`)}</div>
             <button type="button" onClick={handleLogout} className="app-logout">
-              Log out
+              {t('layout.logout')}
             </button>
           </div>
         )}

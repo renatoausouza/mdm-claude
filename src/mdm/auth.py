@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from mdm import config, security, storage
 from mdm.db import BootstrapMarker, User, UserSession, ensure_aware_utc, get_session
+from mdm.i18n import t
 
 router = APIRouter()
 
@@ -59,10 +60,10 @@ def create_user(payload: CreateUserRequest, authorization: str | None = Header(d
             # "only required if this turns out not to be the bootstrap case".
             current_user = get_current_user(authorization)
             if current_user.role != UserRole.ADMIN.value:
-                raise HTTPException(status_code=403, detail="Only admins can create users")
+                raise HTTPException(status_code=403, detail=t("admin_only_create_user"))
 
         if session.query(User).filter_by(username=payload.username).first() is not None:
-            raise HTTPException(status_code=409, detail="Username already exists")
+            raise HTTPException(status_code=409, detail=t("username_exists"))
 
         role = UserRole.ADMIN.value if is_first_user else payload.role.value
 
@@ -78,7 +79,7 @@ def create_user(payload: CreateUserRequest, authorization: str | None = Header(d
             session.commit()
         except IntegrityError:
             session.rollback()
-            raise HTTPException(status_code=409, detail="Username already exists") from None
+            raise HTTPException(status_code=409, detail=t("username_exists")) from None
 
         return UserResponse(id=user.id, username=user.username, role=user.role)
 
@@ -156,18 +157,18 @@ def login(payload: LoginRequest) -> LoginResponse:
             # difference is a timing side-channel an attacker can use to
             # enumerate valid usernames.
             security.verify_password(payload.password, security.DUMMY_PASSWORD_HASH)
-            raise HTTPException(status_code=401, detail="Invalid credentials")
+            raise HTTPException(status_code=401, detail=t("invalid_credentials"))
 
         now = datetime.datetime.now(datetime.timezone.utc)
         # Locked-out accounts get the same generic 401 as a bad password —
         # a distinct status (e.g. 423) would directly reveal, with no
         # timing analysis needed, that this username exists and is locked.
         if user.locked_until is not None and ensure_aware_utc(user.locked_until) > now:
-            raise HTTPException(status_code=401, detail="Invalid credentials")
+            raise HTTPException(status_code=401, detail=t("invalid_credentials"))
 
         if not security.verify_password(payload.password, user.password_hash):
             _register_failed_attempt(session, user)
-            raise HTTPException(status_code=401, detail="Invalid credentials")
+            raise HTTPException(status_code=401, detail=t("invalid_credentials"))
 
         is_approver = user.role == UserRole.APPROVER.value
 
@@ -181,7 +182,7 @@ def login(payload: LoginRequest) -> LoginResponse:
         if is_approver and user.totp_enrolled:
             if payload.totp_code is None or not _verify_and_consume_totp(session, user, payload.totp_code):
                 _register_failed_attempt(session, user)
-                raise HTTPException(status_code=401, detail="Invalid or missing TOTP code")
+                raise HTTPException(status_code=401, detail=t("invalid_or_missing_totp"))
 
         user.failed_login_attempts = 0
         user.locked_until = None
@@ -193,17 +194,17 @@ def login(payload: LoginRequest) -> LoginResponse:
 
 def _authenticate(authorization: str | None, required_scope: str) -> User:
     if authorization is None or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or malformed Authorization header")
+        raise HTTPException(status_code=401, detail=t("missing_auth_header"))
     token = authorization.removeprefix("Bearer ")
 
     with get_session() as session:
         user_session = session.query(UserSession).filter_by(token=token).first()
         if user_session is None:
-            raise HTTPException(status_code=401, detail="Invalid session token")
+            raise HTTPException(status_code=401, detail=t("invalid_session_token"))
 
         now = datetime.datetime.now(datetime.timezone.utc)
         if ensure_aware_utc(user_session.expires_at) < now:
-            raise HTTPException(status_code=401, detail="Session expired")
+            raise HTTPException(status_code=401, detail=t("session_expired"))
 
         # Exact match only — a "full" session must NOT satisfy an
         # "mfa_enrollment" requirement. That scope exists specifically so
@@ -212,11 +213,11 @@ def _authenticate(authorization: str | None, required_scope: str) -> User:
         # session silently re-provision MFA on an already-enrolled account
         # with no password or TOTP re-check.
         if user_session.scope != required_scope:
-            raise HTTPException(status_code=403, detail="Session scope does not permit this action")
+            raise HTTPException(status_code=403, detail=t("session_scope_denied"))
 
         user = session.query(User).filter_by(id=user_session.user_id).first()
         if user is None:
-            raise HTTPException(status_code=401, detail="Invalid session token")
+            raise HTTPException(status_code=401, detail=t("invalid_session_token"))
         return user
 
 
@@ -277,9 +278,9 @@ def verify_mfa(
         user = session.query(User).filter_by(id=current_user.id).first()
         assert user is not None
         if user.totp_secret is None:
-            raise HTTPException(status_code=400, detail="No MFA enrollment in progress")
+            raise HTTPException(status_code=400, detail=t("no_mfa_enrollment"))
         if not _verify_and_consume_totp(session, user, payload.totp_code):
-            raise HTTPException(status_code=401, detail="Invalid TOTP code")
+            raise HTTPException(status_code=401, detail=t("invalid_totp_code"))
         user.totp_enrolled = True
         session.commit()
         return {"status": "enrolled"}

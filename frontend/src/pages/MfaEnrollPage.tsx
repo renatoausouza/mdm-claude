@@ -4,12 +4,15 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import * as api from '../api/endpoints'
 import { ErrorBanner } from '../components/ErrorBanner'
+import { LanguageToggle } from '../components/LanguageToggle'
+import { useLanguage } from '../i18n/LanguageContext'
 
 // Enroll then verify — auth.py never issues a full session from the
 // enrollment token itself; on success the user is sent back to /login to
 // authenticate again with a TOTP code.
 export function MfaEnrollPage() {
   const { enrollmentToken, enrollmentUsername, completeMfaEnrollment } = useAuth()
+  const { t } = useLanguage()
   const navigate = useNavigate()
   const [secret, setSecret] = useState<string | null>(null)
   const [provisioningUri, setProvisioningUri] = useState<string | null>(null)
@@ -55,10 +58,11 @@ export function MfaEnrollPage() {
   if (done) {
     return (
       <div className="centered-form">
-        <h1>Two-factor authentication enabled</h1>
-        <p>Sign in again with your username, password, and a current authenticator code.</p>
-        <button type="button" onClick={handleContinue}>
-          Go to sign in
+        <LanguageToggle className="pre-auth-language-toggle" />
+        <h1>{t('mfaEnroll.doneTitle')}</h1>
+        <p>{t('mfaEnroll.doneBody')}</p>
+        <button type="button" className="btn-primary" onClick={handleContinue}>
+          {t('mfaEnroll.goToSignIn')}
         </button>
       </div>
     )
@@ -66,9 +70,12 @@ export function MfaEnrollPage() {
 
   return (
     <div className="centered-form">
-      <h1>Set up two-factor authentication</h1>
+      <LanguageToggle className="pre-auth-language-toggle" />
+      <h1>{t('mfaEnroll.title')}</h1>
       <p>
-        Approver account <strong>{enrollmentUsername}</strong> requires an authenticator app before it can be used.
+        {t('mfaEnroll.introPrefix')}
+        <strong>{enrollmentUsername}</strong>
+        {t('mfaEnroll.introSuffix')}
       </p>
       {provisioningUri && (
         <div className="mfa-qr">
@@ -77,12 +84,13 @@ export function MfaEnrollPage() {
       )}
       {secret && (
         <p className="field-hint">
-          Or enter this code manually: <code>{secret}</code>
+          {t('mfaEnroll.manualCodePrefix')}
+          <code>{secret}</code>
         </p>
       )}
       <form onSubmit={handleVerify}>
         <label>
-          Enter the 6-digit code from your authenticator app
+          {t('mfaEnroll.codeLabel')}
           <input
             value={totpCode}
             onChange={(e) => setTotpCode(e.target.value)}
@@ -92,8 +100,8 @@ export function MfaEnrollPage() {
           />
         </label>
         <ErrorBanner error={error} />
-        <button type="submit" disabled={verifying || !secret}>
-          {verifying ? 'Verifying…' : 'Confirm'}
+        <button type="submit" className="btn-primary" disabled={verifying || !secret}>
+          {verifying ? t('mfaEnroll.verifying') : t('mfaEnroll.confirm')}
         </button>
       </form>
     </div>

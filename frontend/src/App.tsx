@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './auth/AuthContext'
 import { Layout } from './components/Layout'
 import { ProtectedRoute } from './components/ProtectedRoute'
+import { LanguageProvider } from './i18n/LanguageContext'
 import { LoginPage } from './pages/LoginPage'
 import { MfaEnrollPage } from './pages/MfaEnrollPage'
 import { HomePage } from './pages/HomePage'
@@ -10,6 +11,7 @@ import { QueuePage } from './pages/QueuePage'
 import { ReviewDetailPage } from './pages/ReviewDetailPage'
 import { DuplicateResolvePage } from './pages/DuplicateResolvePage'
 import { AuditPage } from './pages/AuditPage'
+import { HelpPage } from './pages/HelpPage'
 
 // Page routes below are deliberately singular/renamed (/job, /duplicate,
 // /audit-log) where they'd otherwise collide with an API path prefix
@@ -18,34 +20,37 @@ import { AuditPage } from './pages/AuditPage'
 export default function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/mfa-enroll" element={<MfaEnrollPage />} />
+      <LanguageProvider>
+        <AuthProvider>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/mfa-enroll" element={<MfaEnrollPage />} />
 
-          <Route
-            element={
-              <ProtectedRoute>
-                <Layout />
-              </ProtectedRoute>
-            }
-          >
-            <Route path="/" element={<HomePage />} />
-            <Route path="/upload" element={<UploadPage />} />
-            <Route path="/queue/:domain" element={<QueuePage />} />
-            <Route path="/job/:jobId" element={<ReviewDetailPage />} />
-            <Route path="/duplicate/:caseId" element={<DuplicateResolvePage />} />
             <Route
-              path="/audit-log"
               element={
-                <ProtectedRoute allowedRoles={['admin']}>
-                  <AuditPage />
+                <ProtectedRoute>
+                  <Layout />
                 </ProtectedRoute>
               }
-            />
-          </Route>
-        </Routes>
-      </AuthProvider>
+            >
+              <Route path="/" element={<HomePage />} />
+              <Route path="/upload" element={<UploadPage />} />
+              <Route path="/queue/:domain" element={<QueuePage />} />
+              <Route path="/job/:jobId" element={<ReviewDetailPage />} />
+              <Route path="/duplicate/:caseId" element={<DuplicateResolvePage />} />
+              <Route path="/help" element={<HelpPage />} />
+              <Route
+                path="/audit-log"
+                element={
+                  <ProtectedRoute allowedRoles={['admin']}>
+                    <AuditPage />
+                  </ProtectedRoute>
+                }
+              />
+            </Route>
+          </Routes>
+        </AuthProvider>
+      </LanguageProvider>
     </BrowserRouter>
   )
 }

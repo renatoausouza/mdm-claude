@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from mdm.auth import UserRole, get_current_user
 from mdm.db import AuditLogEntry, User, get_session
+from mdm.i18n import t
 
 router = APIRouter()
 
@@ -36,7 +37,7 @@ def list_audit_log(
     current_user: User = Depends(get_current_user),
 ) -> AuditLogListResponse:
     if current_user.role != UserRole.ADMIN.value:
-        raise HTTPException(status_code=403, detail="Only admin accounts may view the audit log")
+        raise HTTPException(status_code=403, detail=t("admin_only_audit_log"))
 
     with get_session() as session:
         query = session.query(AuditLogEntry)

@@ -4,7 +4,8 @@
 
 export type Domain = 'supplier' | 'client' | 'product'
 export const DOMAINS: Domain[] = ['supplier', 'client', 'product']
-export const DOMAIN_LABELS: Record<Domain, string> = { supplier: 'Supplier', client: 'Client', product: 'Product' }
+// Display labels live in i18n/translations.ts ('domain.supplier' etc.),
+// not here — this file mirrors backend shapes, not UI vocabulary.
 
 export type UserRole = 'submitter' | 'approver' | 'admin'
 

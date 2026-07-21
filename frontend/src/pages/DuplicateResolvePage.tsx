@@ -4,13 +4,14 @@ import * as api from '../api/endpoints'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { StatusBadge } from '../components/StatusBadge'
 import { useAuth } from '../auth/AuthContext'
+import { useLanguage } from '../i18n/LanguageContext'
 import { useReviewAction } from '../hooks/useReviewAction'
-import { DOMAIN_LABELS, REQUIRES_SEGREGATION, type DuplicateCaseResponse, type ResolveDecision } from '../types/api'
-import { humanize } from '../utils'
+import { REQUIRES_SEGREGATION, type DuplicateCaseResponse, type ResolveDecision } from '../types/api'
 
 export function DuplicateResolvePage() {
   const { caseId } = useParams<{ caseId: string }>()
   const { session } = useAuth()
+  const { t } = useLanguage()
   const [duplicateCase, setDuplicateCase] = useState<DuplicateCaseResponse | null>(null)
   const [loadError, setLoadError] = useState<unknown>(null)
   const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set())
@@ -28,7 +29,7 @@ export function DuplicateResolvePage() {
   }, [load])
 
   if (loadError) return <ErrorBanner error={loadError} />
-  if (!duplicateCase) return <p>Loading…</p>
+  if (!duplicateCase) return <p>{t('common.loading')}</p>
 
   const isApprover = session?.role === 'approver'
   const isPending = duplicateCase.status === 'pending'
@@ -58,7 +59,7 @@ export function DuplicateResolvePage() {
           accepted_fields: decision === 'partial' ? Array.from(selectedFields) : undefined,
           notes: notes || undefined,
         }),
-      'Case',
+      'common.case',
       load,
     )
   }
@@ -66,25 +67,29 @@ export function DuplicateResolvePage() {
   return (
     <div>
       <h1>
-        Duplicate review <StatusBadge status={duplicateCase.status} />
+        {t('duplicate.title')} <StatusBadge status={duplicateCase.status} />
       </h1>
-      <p className="field-hint">Matched on: {duplicateCase.match_key === 'manual' ? 'manually linked by a reviewer' : duplicateCase.match_key}</p>
+      <p className="field-hint">
+        {t('duplicate.matchedOn', {
+          key: duplicateCase.match_key === 'manual' ? t('duplicate.matchedOnManual') : duplicateCase.match_key,
+        })}
+      </p>
 
       <table className="comparison-table">
         <thead>
           <tr>
-            <th>Field</th>
-            <th>Existing value</th>
-            <th>New value</th>
-            {isPending && <th>Accept this field?</th>}
+            <th>{t('duplicate.colField')}</th>
+            <th>{t('duplicate.colExisting')}</th>
+            <th>{t('duplicate.colNew')}</th>
+            {isPending && <th>{t('duplicate.colAccept')}</th>}
           </tr>
         </thead>
         <tbody>
           {duplicateCase.comparisons.map((comparison) => (
             <tr key={comparison.field} className={comparison.differs ? 'comparison-differs' : ''}>
-              <td>{humanize(comparison.field)}</td>
-              <td>{comparison.old_value ?? '—'}</td>
-              <td>{comparison.new_value ?? '—'}</td>
+              <td>{t(`field.${comparison.field}`)}</td>
+              <td>{comparison.old_value ?? t('common.none')}</td>
+              <td>{comparison.new_value ?? t('common.none')}</td>
               {isPending && (
                 <td>
                   {comparison.differs && (
@@ -104,14 +109,12 @@ export function DuplicateResolvePage() {
       {isPending && isApprover && (
         <section className="review-actions">
           <label>
-            Notes
+            {t('duplicate.notes')}
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
           </label>
           {blockedBySegregation && (
             <p className="banner banner-info">
-              You submitted this {DOMAIN_LABELS[duplicateCase.domain].toLowerCase()} candidate — segregation of
-              duties means you cannot accept an update to your own submission. You may still reject it, or have
-              another approver resolve it.
+              {t('duplicate.segregationBanner', { domain: t(`domain.${duplicateCase.domain}`).toLowerCase() })}
             </p>
           )}
           <ErrorBanner error={actionError} />
@@ -122,9 +125,9 @@ export function DuplicateResolvePage() {
               className="btn-primary btn-stamp"
               onClick={() => resolve('accept_all')}
               disabled={busy || blockedBySegregation}
-              title={blockedBySegregation ? 'You cannot resolve a duplicate for your own submission' : undefined}
+              title={blockedBySegregation ? t('duplicate.segregationTitle') : undefined}
             >
-              Accept all
+              {t('duplicate.acceptAll')}
             </button>
             <button
               type="button"
@@ -133,24 +136,24 @@ export function DuplicateResolvePage() {
               disabled={busy || selectedFields.size === 0 || blockedBySegregation}
               title={
                 blockedBySegregation
-                  ? 'You cannot resolve a duplicate for your own submission'
+                  ? t('duplicate.segregationTitle')
                   : selectedFields.size === 0
-                    ? 'Select at least one differing field above'
+                    ? t('duplicate.selectFieldTitle')
                     : undefined
               }
             >
-              Accept selected fields{differingFields.length > 0 ? ` (${selectedFields.size} selected)` : ''}
+              {differingFields.length > 0
+                ? t('duplicate.acceptSelectedCount', { count: selectedFields.size })
+                : t('duplicate.acceptSelected')}
             </button>
             <button type="button" className="btn-danger" onClick={() => resolve('reject_all')} disabled={busy}>
-              Reject
+              {t('duplicate.reject')}
             </button>
           </div>
         </section>
       )}
 
-      {isPending && !isApprover && (
-        <p className="field-hint">Only approver accounts can resolve a duplicate review case.</p>
-      )}
+      {isPending && !isApprover && <p className="field-hint">{t('duplicate.approverOnlyHint')}</p>}
     </div>
   )
 }

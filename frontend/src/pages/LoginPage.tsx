@@ -2,9 +2,12 @@ import { useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { ErrorBanner } from '../components/ErrorBanner'
+import { LanguageToggle } from '../components/LanguageToggle'
+import { useLanguage } from '../i18n/LanguageContext'
 
 export function LoginPage() {
   const { session, login } = useAuth()
+  const { t } = useLanguage()
   const navigate = useNavigate()
   const location = useLocation()
   const [username, setUsername] = useState('')
@@ -38,14 +41,15 @@ export function LoginPage() {
 
   return (
     <div className="centered-form">
-      <h1>Sign in</h1>
+      <LanguageToggle className="pre-auth-language-toggle" />
+      <h1>{t('login.title')}</h1>
       <form onSubmit={handleSubmit}>
         <label>
-          Username
+          {t('login.username')}
           <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required />
         </label>
         <label>
-          Password
+          {t('login.password')}
           <input
             type="password"
             value={password}
@@ -55,8 +59,8 @@ export function LoginPage() {
           />
         </label>
         <label>
-          Authenticator code
-          <span className="field-hint"> (approver accounts only, once enrolled)</span>
+          {t('login.authenticatorCode')}
+          <span className="field-hint">{t('login.authenticatorHint')}</span>
           <input
             value={totpCode}
             onChange={(e) => setTotpCode(e.target.value)}
@@ -66,8 +70,8 @@ export function LoginPage() {
           />
         </label>
         <ErrorBanner error={error} />
-        <button type="submit" disabled={submitting}>
-          {submitting ? 'Signing in…' : 'Sign in'}
+        <button type="submit" className="btn-primary" disabled={submitting}>
+          {submitting ? t('login.submitting') : t('login.submit')}
         </button>
       </form>
     </div>

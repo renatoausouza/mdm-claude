@@ -15,6 +15,7 @@ from mdm import config, storage
 from mdm.auth import get_current_user
 from mdm.db import AuditLogEntry, Document, DuplicateReviewCase, ExtractionJob, User, get_session
 from mdm.domains import DOMAIN_SPECS, job_domain
+from mdm.i18n import t
 from mdm.scoring import ScoringResult
 
 logger = logging.getLogger(__name__)
@@ -164,12 +165,13 @@ def upload_document(
 ) -> JobResponse:
     if domain not in DOMAIN_SPECS:
         raise HTTPException(
-            status_code=400, detail=f"Unsupported domain: {domain!r} (must be one of {sorted(DOMAIN_SPECS)})"
+            status_code=400,
+            detail=t("unsupported_domain", domain=repr(domain), choices=sorted(DOMAIN_SPECS)),
         )
 
     extension = os.path.splitext(file.filename or "")[1].lower()
     if extension not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail=f"Unsupported file type: {extension or '(none)'}")
+        raise HTTPException(status_code=400, detail=t("unsupported_file_type", extension=extension or "(none)"))
 
     # A plain sync route (not async def) so FastAPI runs it in its
     # threadpool rather than blocking the event loop on the DB/disk work
@@ -177,7 +179,7 @@ def upload_document(
     content = file.file.read()
     max_bytes = config.get_max_upload_bytes()
     if len(content) > max_bytes:
-        raise HTTPException(status_code=413, detail=f"File exceeds the {max_bytes}-byte upload limit")
+        raise HTTPException(status_code=413, detail=t("upload_too_large", max_bytes=max_bytes))
 
     content_hash = hashlib.sha256(content).hexdigest()
 
@@ -229,7 +231,7 @@ def upload_document(
                     )
                 raise HTTPException(
                     status_code=500,
-                    detail="Document record exists but its stored file is missing",
+                    detail=t("document_file_missing"),
                 )
             if current_user.id != existing_document.uploaded_by:
                 # A different user re-uploading byte-identical content is
@@ -355,7 +357,8 @@ def list_jobs(
     job ids without one."""
     if domain is not None and domain not in DOMAIN_SPECS:
         raise HTTPException(
-            status_code=400, detail=f"Unknown domain: {domain!r} (must be one of {sorted(DOMAIN_SPECS)})"
+            status_code=400,
+            detail=t("unknown_domain", domain=repr(domain), choices=sorted(DOMAIN_SPECS)),
         )
 
     with get_session() as session:
@@ -424,7 +427,7 @@ def get_job_result(job_id: str, current_user: User = Depends(get_current_user)) 
     with get_session() as session:
         job = session.query(ExtractionJob).filter_by(id=job_id).first()
         if job is None:
-            raise HTTPException(status_code=404, detail="Job not found")
+            raise HTTPException(status_code=404, detail=t("job_not_found"))
         domain = job_domain(job)
         spec = DOMAIN_SPECS[domain]
         result = spec.result_model.model_validate_json(job.result_json) if job.result_json else None
