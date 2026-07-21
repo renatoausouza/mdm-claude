@@ -1,6 +1,7 @@
 import { request, uploadFile } from './client'
 import type {
   AuditLogListResponse,
+  ChatQueryResponse,
   DashboardResponse,
   Domain,
   DuplicateCaseResponse,
@@ -161,4 +162,10 @@ export function getDashboard(): Promise<DashboardResponse> {
 
 export function listAuditLog(documentId?: string): Promise<AuditLogListResponse> {
   return request<AuditLogListResponse>('/audit', { params: { document_id: documentId } })
+}
+
+// ---- chat query (#21) ----
+
+export function chatQuery(question: string): Promise<ChatQueryResponse> {
+  return request<ChatQueryResponse>('/chat/query', { body: { question } })
 }

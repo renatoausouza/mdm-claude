@@ -290,6 +290,43 @@ class MasterRecordSearchResponse(BaseModel):
 _SEARCH_DEFAULT_LIMIT = 50
 
 
+def search_records(session: Session, domain: str, q: str, offset: int, limit: int) -> MasterRecordSearchResponse:
+    """The actual substring-search mechanism — factored out of the HTTP
+    endpoint below so #21's chat feature can execute an LLM-proposed
+    filter through this exact same safe, parameterized path instead of a
+    second query mechanism. Assumes `domain` is already validated; auth
+    and domain-validity checks stay in each caller (they differ: the HTTP
+    endpoint 400s on a bad domain, the chat feature just treats an invalid
+    LLM-proposed domain as "no filter produced")."""
+    query = q.strip().lower()
+    # Ordered explicitly (not relying on incidental insertion order) so
+    # offset-based paging returns a stable, non-overlapping sequence of
+    # pages across requests — most-recently-updated first, matching the
+    # "recent first" convention list_jobs/list_audit_log already use.
+    records = (
+        session.query(MasterRecord)
+        .filter_by(domain=domain, is_current=True)
+        .order_by(MasterRecord.last_updated_at.desc())
+        .all()
+    )
+
+    matches: list[MasterRecordSearchResult] = []
+    for record in records:
+        fields = json.loads(record.fields_json)
+        haystack = " ".join(str(v) for v in fields.values()).lower()
+        if query and query not in haystack:
+            continue
+        matches.append(
+            MasterRecordSearchResult(
+                id=record.id, domain=record.domain, record_key=record.record_key, version=record.version, fields=fields
+            )
+        )
+
+    page = matches[offset : offset + limit]
+    has_more = len(matches) > offset + limit
+    return MasterRecordSearchResponse(results=page, has_more=has_more)
+
+
 @router.get("/master-records/search", response_model=MasterRecordSearchResponse)
 def search_master_records(
     domain: str,
@@ -318,34 +355,8 @@ def search_master_records(
             status_code=400, detail=t("unknown_domain", domain=repr(domain), choices=sorted(DOMAIN_SPECS))
         )
 
-    query = q.strip().lower()
     with get_session() as session:
-        # Ordered explicitly (not relying on incidental insertion order) so
-        # offset-based paging returns a stable, non-overlapping sequence of
-        # pages across requests — most-recently-updated first, matching the
-        # "recent first" convention list_jobs/list_audit_log already use.
-        records = (
-            session.query(MasterRecord)
-            .filter_by(domain=domain, is_current=True)
-            .order_by(MasterRecord.last_updated_at.desc())
-            .all()
-        )
-
-    matches: list[MasterRecordSearchResult] = []
-    for record in records:
-        fields = json.loads(record.fields_json)
-        haystack = " ".join(str(v) for v in fields.values()).lower()
-        if query and query not in haystack:
-            continue
-        matches.append(
-            MasterRecordSearchResult(
-                id=record.id, domain=record.domain, record_key=record.record_key, version=record.version, fields=fields
-            )
-        )
-
-    page = matches[offset : offset + limit]
-    has_more = len(matches) > offset + limit
-    return MasterRecordSearchResponse(results=page, has_more=has_more)
+        return search_records(session, domain, q, offset, limit)
 
 
 class MasterRecordDetailResponse(BaseModel):

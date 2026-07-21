@@ -16,12 +16,13 @@ import { MasterDataPage } from './pages/MasterDataPage'
 import { MasterRecordDetailPage } from './pages/MasterRecordDetailPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { EditRequestResolvePage } from './pages/EditRequestResolvePage'
+import { ChatPage } from './pages/ChatPage'
 
 // Page routes below are deliberately singular/renamed (/job, /duplicate,
-// /audit-log, /data-quality, /edit-request) where they'd otherwise collide
-// with an API path prefix (/jobs, /duplicates, /audit, /dashboard,
-// /edit-requests) that the dev proxy and nginx forward to the backend — a
-// colliding route would 404 on hard refresh or a direct link.
+// /audit-log, /data-quality, /edit-request, /ask) where they'd otherwise
+// collide with an API path prefix (/jobs, /duplicates, /audit, /dashboard,
+// /edit-requests, /chat) that the dev proxy and nginx forward to the
+// backend — a colliding route would 404 on hard refresh or a direct link.
 export default function App() {
   return (
     <BrowserRouter>
@@ -50,6 +51,14 @@ export default function App() {
                 element={
                   <ProtectedRoute allowedRoles={['approver', 'admin']}>
                     <DashboardPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/ask"
+                element={
+                  <ProtectedRoute allowedRoles={['approver', 'admin']}>
+                    <ChatPage />
                   </ProtectedRoute>
                 }
               />

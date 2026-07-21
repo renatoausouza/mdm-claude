@@ -37,6 +37,11 @@ export function Layout() {
               {t('layout.navDashboard')}
             </NavLink>
           )}
+          {(session?.role === 'approver' || session?.role === 'admin') && (
+            <NavLink to="/ask" className="app-nav-link">
+              {t('layout.navChat')}
+            </NavLink>
+          )}
 
           <div className="app-nav-section">{t('layout.navQueuesSection')}</div>
           {DOMAINS.map((domain) => (

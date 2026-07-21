@@ -322,3 +322,16 @@ export interface AuditLogEntryResponse {
 export interface AuditLogListResponse {
   entries: AuditLogEntryResponse[]
 }
+
+// ---- chat_query.ts ----
+
+export interface ChatQueryRequest {
+  question: string
+}
+
+export interface ChatQueryResponse {
+  understood: boolean
+  filter_domain: Domain | null
+  filter_contains: string | null
+  results: MasterRecordSearchResult[]
+}

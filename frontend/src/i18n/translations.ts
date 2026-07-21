@@ -27,6 +27,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'layout.pageTitle': 'MDM — Master Data Registry',
     'layout.navIntake': 'Intake',
     'layout.navDashboard': 'Dashboard',
+    'layout.navChat': 'Ask',
     'layout.navQueuesSection': 'Queues',
     'layout.navMasterDataSection': 'Master Data',
     'layout.navRecordsSection': 'Records',
@@ -202,6 +203,14 @@ export const translations: Record<Lang, Record<string, string>> = {
     'dashboard.openDuplicateCases': 'Open duplicate cases: {count}',
     'dashboard.noRecordsYet': 'No records yet',
 
+    // ---- chat query ----
+    'chat.title': 'Ask about master data',
+    'chat.intro': 'Ask a question in plain language — for example, "show me 5 clients based in Minas Gerais."',
+    'chat.placeholder': 'Ask a question about registered records…',
+    'chat.ask': 'Ask',
+    'chat.notUnderstood': "Sorry, that question couldn't be turned into a search — try rephrasing it, naming a domain (supplier, client, or product) and what to search for.",
+    'chat.filterSummary': 'Searched {domain} records for "{contains}":',
+
     // ---- help page ----
     'help.title': 'How this works',
     'help.intro':
@@ -317,6 +326,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'layout.pageTitle': 'MDM — Registro de Dados Mestres',
     'layout.navIntake': 'Entrada',
     'layout.navDashboard': 'Painel',
+    'layout.navChat': 'Perguntar',
     'layout.navQueuesSection': 'Filas',
     'layout.navMasterDataSection': 'Dados Mestres',
     'layout.navRecordsSection': 'Registros',
@@ -492,6 +502,15 @@ export const translations: Record<Lang, Record<string, string>> = {
     'dashboard.extractionFailureRate': 'Taxa de falha na extração: {rate}%',
     'dashboard.openDuplicateCases': 'Casos de duplicidade em aberto: {count}',
     'dashboard.noRecordsYet': 'Nenhum registro ainda',
+
+    // ---- chat query ----
+    'chat.title': 'Perguntar sobre dados mestres',
+    'chat.intro': 'Faça uma pergunta em linguagem natural — por exemplo, "mostre 5 clientes de Minas Gerais."',
+    'chat.placeholder': 'Faça uma pergunta sobre os registros cadastrados…',
+    'chat.ask': 'Perguntar',
+    'chat.notUnderstood':
+      'Não foi possível transformar essa pergunta em uma busca — tente reformular, indicando um domínio (fornecedor, cliente ou produto) e o que buscar.',
+    'chat.filterSummary': 'Buscando em {domain} por "{contains}":',
 
     // ---- help page ----
     'help.title': 'Como funciona',

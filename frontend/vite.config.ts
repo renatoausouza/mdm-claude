@@ -13,6 +13,7 @@ const API_PATHS = [
   '/master-records',
   '/edit-requests',
   '/dashboard',
+  '/chat',
   '/auth',
   '/users',
   '/audit',
